@@ -1,0 +1,4 @@
+interface:
+  display_name: "通用采购评估"
+  short_description: "跨品类核验商品与供应商，比较采购经济性并生成内部及供应商报告"
+  default_prompt: "使用 $purchase-review 评估这款产品，结合采购用途、供应商资料和现有方案，生成内部评审及供应商反馈。"

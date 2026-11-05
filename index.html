@@ -3,21 +3,25 @@
 <body>
 <header class="topbar"><a class="brand" href="./index.html"><span class="brandmark">择</span><span>选品有据<small>PURCHASE INTELLIGENCE</small></span></a><div class="header-context">采购评审工作台 <span>/</span> 中国市场</div><div class="top-actions"><span class="demo-label"><i></i> 交互演示</span><button id="guide" class="quiet">演示引导 ↗</button></div></header>
 <div class="disclosure"><span>DEMO</span> 产品来自你提供的资料；采购价格、销售和库存为模拟数据。当前未接入实时 AI、联网搜索或企业库存。</div>
+<nav class="view-navigation" aria-label="工作区导航"><button data-view="review" aria-current="page">采购评审</button><button data-view="internal">内部评审</button><button data-view="supplier">供应商视角</button><span>随时切换视角 · 报告可独立导出</span></nav>
 <div class="workspace">
 <aside class="sidebar"><div class="side-heading">本次评审 <span>03</span></div><div class="queue-title">候选商品</div><nav id="products" aria-label="选择候选商品"></nav><div class="side-note"><span class="small-icon">↳</span><strong>从资料到采购决策</strong><p>选择商品，调整条件，比较收益，生成两份不同受众的报告。</p></div><div class="side-bottom"><span class="online-dot"></span> 本地演示 · 无需登录<br><small>所有计算在当前浏览器完成</small></div></aside>
 <main>
 <div class="breadcrumb">采购工作区 <span>/</span> 新品准入 <span>/</span> <span id="case-id"></span></div>
 <div class="page-title"><div><div class="eyebrow">PRODUCT REVIEW</div><h1>新品采购评审</h1></div><button id="reset" class="quiet">↺ 重置本商品</button></div>
+<div id="review-view">
 <section class="product-overview" aria-label="商品概况"><div class="product-visual" id="product-visual"></div><div class="product-summary" id="product-summary"></div></section>
 <div class="review-tabs" role="tablist" aria-label="评审内容"><button role="tab" id="tab-decision" aria-controls="tab-content" data-tab="decision" aria-selected="true">决策总览</button><button role="tab" id="tab-evidence" aria-controls="tab-content" data-tab="evidence" aria-selected="false">资料与证据 <span>03</span></button><button role="tab" id="tab-inventory" aria-controls="tab-content" data-tab="inventory" aria-selected="false">现有 SKU 对比</button></div>
 <section id="tab-content" role="tabpanel" aria-labelledby="tab-decision"></section>
 <div class="report-strip"><div><span class="eyebrow">ONE REVIEW, TWO REPORTS</span><h3>同一次评审，两种沟通视角</h3><p>内部看经营测算，供应商看补件与改进要求。</p></div><div><button class="secondary" data-report="supplier">供应商报告 ↗</button><button class="primary" data-report="internal">内部评审报告 ↗</button></div></div>
+</div>
+<section id="report-view" class="report-page" aria-labelledby="report-title" hidden><div class="report-toolbar"><div><span class="eyebrow" id="report-audience"></span><h2 id="report-title"></h2><p id="report-product"></p></div><div class="report-actions"><button id="print-report" class="secondary">打印 / 保存 PDF</button><button id="export-report" class="primary">下载 HTML ↓</button></div></div><div id="export-note"></div><div id="report-content"></div><button id="close-report" class="secondary">← 返回采购评审</button></section>
 <footer>证据有出处 · 假设可调整 · 决策可复核 <span>选品有据 / DEMO 01</span></footer>
 </main>
 <aside class="inspector" aria-label="模拟采购参数"><div class="inspector-top"><span class="eyebrow">SCENARIO LAB</span><h2>采购条件推演</h2><p>改动参数，实时比较经营结果。</p></div><div class="assumption-tag">以下金额与数量均为演示假设</div><form id="controls"></form><div class="simulation-gate"><label><input type="checkbox" id="gate"> 演示：假设必要资料已通过</label><p>仅切换决策规则，不代表真实资料已核验。</p></div><div id="mini-result" aria-live="polite"></div><button class="primary full" id="evaluate">查看当前评估 ↓</button><p class="inspector-foot">测算周期 90 天 · 人民币<br>统一演示口径，未单独建模税务抵扣。</p></aside>
 </div>
-<dialog id="report-dialog" aria-labelledby="report-title"><div class="dialog-toolbar"><div><span class="eyebrow" id="report-audience"></span><h2 id="report-title"></h2></div><button class="close-button" id="close-report" aria-label="关闭报告">×</button></div><div id="report-content"></div><div class="dialog-footer"><span id="export-note"></span><button id="export-report" class="primary">下载独立 HTML 报告 ↓</button></div></dialog>
-<dialog id="guide-dialog" aria-labelledby="guide-title"><button class="close-button guide-close" id="close-guide" aria-label="关闭演示引导">×</button><span class="eyebrow">A 5-MINUTE WALKTHROUGH</span><h2 id="guide-title">五分钟，讲清一次采购判断。</h2><ol><li><b>选一个真实商品</b><p>左侧切换 BKT 坐姿椅、Warmies 企鹅或蓝色龙。</p></li><li><b>先看证据边界</b><p>打开「资料与证据」，区分材料原文、待核验声明和模拟数据。</p></li><li><b>调整条件，观察结果</b><p>提高采购价或替代比例，观察增量贡献变化；用资料假设开关展示准入门槛。</p></li><li><b>讨论旧 SKU 怎么处理</b><p>查看模拟库存对比，理解先试销、再决定停补的路径。</p></li><li><b>展示两份报告</b><p>内部版包含经营数字；供应商版只有补件和改进要求，可单独下载。</p></li></ol><button id="start-guide" class="primary full">开始演示</button></dialog>
+
+<dialog id="guide-dialog" aria-labelledby="guide-title"><button class="close-button guide-close" id="close-guide" aria-label="关闭演示引导">×</button><span class="eyebrow">A 5-MINUTE WALKTHROUGH</span><h2 id="guide-title">五分钟，讲清一次采购判断。</h2><ol><li><b>选一个真实商品</b><p>左侧切换 BKT 坐姿椅、Warmies 企鹅或蓝色龙。</p></li><li><b>先看证据边界</b><p>打开「资料与证据」，区分材料原文、待核验声明和模拟数据。</p></li><li><b>调整条件，观察结果</b><p>提高采购价或替代比例，观察增量贡献变化；用资料假设开关展示准入门槛。</p></li><li><b>讨论旧 SKU 怎么处理</b><p>查看模拟库存对比，理解先试销、再决定停补的路径。</p></li><li><b>展示两份报告</b><p>顶部导航直接切换两种视角，下载 HTML 或打印保存 PDF。</p></li></ol><button id="start-guide" class="primary full">开始演示</button></dialog>
 <div id="toast" role="status"></div>
 <script src="data.js"></script><script src="model.js"></script><script src="app.js"></script>
 </body></html>
