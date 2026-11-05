@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict');
+const {calculate,decision}=require('./model.js');
+const v={cost:92,price:199,qty:160,sales:120,sub:35,freight:8,fee:18,fixed:1800,oldMargin:48};
+const m=calculate(v);
+assert.equal(m.unit,81);assert.equal(m.cash,17800);assert.equal(m.profit,5904);assert.equal(m.breakEven,29);assert.equal(m.remaining,40);
+assert.equal(decision(v,false).label,'待补充资料');assert.equal(decision(v,true).label,'可进入小批量试销');
+assert.ok(calculate({...v,cost:140}).profit<m.profit);
+assert.equal(decision({...v,cost:190},true).label,'建议议价 / 暂缓');
+assert.equal(calculate({...v,price:1}).breakEven,null);
+assert.ok(calculate({...v,sales:500}).scenarios.every(s=>s.sold<=v.qty));
+assert.ok(calculate({...v,sub:100}).scenarios.every(s=>s.sub<=100&&s.sub>=0));
+assert.equal(calculate({...v,sales:0}).profit,-1800);
+console.log('PASS: baseline arithmetic, data gate, sensitivity, negative contribution, sales cap, substitution bounds and zero sales.');

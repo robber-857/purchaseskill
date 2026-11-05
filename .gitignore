@@ -1,0 +1,10 @@
+.runtime/
+tmp/
+.playwright-cli/
+__pycache__/
+*.zip
+output/
+.env
+.env.*
+assets/
+extract_pdf.py
