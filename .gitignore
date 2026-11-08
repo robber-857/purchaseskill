@@ -8,3 +8,10 @@ output/
 .env.*
 assets/
 extract_pdf.py
+node_modules/
+web/dist/
+web/.local-data/
+web/.vercel/
+web/public/demo-assets/
+web/public/pdfjs/
+!web/.env.example

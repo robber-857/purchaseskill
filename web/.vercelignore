@@ -1,0 +1,6 @@
+node_modules
+.local-data
+.env*
+tests
+README.md
+dist

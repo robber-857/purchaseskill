@@ -1,0 +1,15 @@
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {zipSync,strToU8} from 'fflate';
+import * as CFB from 'cfb';
+const out='../tmp/upload-fixtures';await mkdir(out,{recursive:true});
+const ns='http://schemas.openxmlformats.org/presentationml/2006/main';const a='http://schemas.openxmlformats.org/drawingml/2006/main';const r='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const presentation=`<p:presentation xmlns:p="${ns}" xmlns:r="${r}"><p:sldIdLst><p:sldId id="1" r:id="rId2"/><p:sldId id="2" r:id="rId1"/></p:sldIdLst></p:presentation>`;
+const rels=`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="slides/slide1.xml"/><Relationship Id="rId2" Target="slides/slide2.xml"/></Relationships>`;
+const slide=t=>`<p:sld xmlns:p="${ns}" xmlns:a="${a}" xmlns:r="${r}"><p:cSld><a:p><a:r><a:t>${t}</a:t></a:r></a:p><a:blip r:embed="img1"/></p:cSld></p:sld>`;
+const imageRels=`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="img1" Type="${r}/image" Target="../media/penguin.png"/></Relationships>`;
+await writeFile(out+'/supplier.pptx',zipSync({'ppt/presentation.xml':strToU8(presentation),'ppt/_rels/presentation.xml.rels':strToU8(rels),'ppt/slides/slide1.xml':strToU8(slide('SECOND SLIDE: Supplier claim only')),'ppt/slides/slide2.xml':strToU8(slide('FIRST SLIDE: Product A, MOQ 20')),'ppt/slides/_rels/slide1.xml.rels':strToU8(imageRels),'ppt/slides/_rels/slide2.xml.rels':strToU8(imageRels),'ppt/media/penguin.png':new Uint8Array(await readFile('../assets/penguin.png'))}));
+const text=Buffer.from('Legacy PPT product text. Not certified.','utf16le');const record=Buffer.alloc(8+text.length);record.writeUInt16LE(4000,2);record.writeUInt32LE(text.length,4);text.copy(record,8);const file=CFB.utils.cfb_new();CFB.utils.cfb_add(file,'PowerPoint Document',record);await writeFile(out+'/legacy.ppt',CFB.write(file,{type:'buffer'}));
+await writeFile(out+'/supplier.docx',zipSync({'word/document.xml':strToU8('<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Supplier warranty: terms pending.</w:t></w:r></w:p></w:body></w:document>')}));
+await writeFile(out+'/notes.txt','采购需求：先核对型号，不按宣传直接采购。');
+await writeFile(out+'/photo.png',await readFile('../assets/penguin.png'));
+console.log('Created synthetic parser fixtures. Not supplier evidence.');
