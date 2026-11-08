@@ -4,11 +4,12 @@ assessment 的结构为：
 {
   "criteria":[{"id":"fit|quality|commercial|portfolio|economics","status":"missing|partial|supported","basis":"本维度的资料依据、缺项和局限","refs":[{"source":0,"page":1}]}],
   "opportunities":[{"title":"潜在收益方向","detail":"依据与必须验证的前提，不能把宣传当收益","refs":[{"source":0,"page":1}]}],
-  "skuImpact":{"summary":"现有组合影响及未知项","rows":[{"sku":"用户提供的真实现有型号","relationship":"新品与旧品的替代、互补或冲突依据","action":"保留|并行试销|评估替换|待核验","reason":"建议原因","exitCondition":"评估退出前必须满足的条件","refs":[{"source":0,"page":1}]}]},
+  "skuImpact":{"summary":"现有组合影响及未知项","rows":[{"sku":"用户提供的真实现有型号","relationship":"新品与旧品的替代、互补或冲突依据","action":"保留|暂停补货|减少补货|并行试销|评估替换|待核验","reason":"建议原因","exitCondition":"评估退出前必须满足的条件","refs":[{"source":0,"page":1}]}]},
   "economics":null
 }
 criteria 必须恰好五项，不重复：fit 产品与需求20%；quality 质量与使用条件25%；commercial 商务与交付20%；portfolio 现有组合适配15%；economics 收益与成本20%。评分衡量采购决策的资料支持度，不是质量好坏。missing 无可用依据，partial 只有部分可用依据，supported 具有本维度较完整且可追溯的评估资料。分数由程序按0%、50%、100%加权计算。supported 不等于合格，发现不符合需求也要在decision和risks保留，分数不能覆盖硬门槛。供应商宣传最多支持partial，不能成为检测合格或完整经济依据。每项basis需解释缺口；partial/supported必须引用页码。没有买方需求只能partial；没有内部经营数据时portfolio和economics为missing。无法判断为missing，不猜测。opportunities最多4项，无依据用空数组。
 skuImpact.rows只允许上传文件中实际存在的现有SKU、物料或资产，不得把待采购产品伪装为现有库存。没有现有方案数据时rows为空并在summary说明不能确定替代或退出名单。不能自动清退；每行exitCondition明确剩余库存、售后与试销验证等条件。非转售用途改为现有方案/资产适配，不套用零售SKU。
+现有SKU调整要区分“现在能建议的库存动作”和“将来是否替换”。已有库存、销量及可取消补货信息足以支持低风险动作时，应明确建议暂停或减少补货、保留在售并消化库存，不能因新品未通过验收就把所有旧品动作都写成待核验。结合统计周期、在途、订单承诺、季节性和补货交期解释依据；缺少关键数据时保留条件，不套用统一滞销阈值，不编减量数字。暂停补货不等于下架、清仓或已经取消订单，仍由买方确认执行。brief.portfolio必须直接点名最重要的现有SKU及动作（如暂停某笔已提供的可取消补货、另两款保留），不要只说“可能影响”“待评估”；完整逐SKU理由和退出条件放在附录。
 economics仅用于转售：只有资料明确给出同一币种、同一周期的保守/基准/乐观三种情景及每个输入时才输出对象，否则必须null。严禁从品牌册补造销量、转化率、成本或以0代替未知。对象结构：{currency:"CNY等3位大写币种",period:"确切测算周期",basis:"输入来源、税务口径和假设局限",scenarios:[{name:"保守|基准|乐观",revenue:期间新品销售收入,variableCost:期间新品销售对应变动成本,displacedContribution:被替代旧品贡献损失,launchCost:上新成本,exitCost:退出成本,holdingCost:仓储资金成本,refs:[{source:0,page:1}]}]}。三种情景各一项，所有金额非负且最多1e10，单位为整期金额而非单价，明确为0才能填0。模型只提取输入，程序计算组合增量贡献；不能以销售额增长当净收益或净利润。缺经济数据时summary明确收益风险尚无法量化比较。
 summary先回答此刻是否推进采购，然后说明最关键原因及重新评审条件。decision仍限定原枚举，只允许初筛或样品评估，不自动批准正式采购。
 

@@ -7,6 +7,15 @@ import {reportHTML} from '../src/report.js';
 const manifest={pages:[1,4,22,30].map(page=>({file:0,page}))};
 const copy=()=>structuredClone(warmiesReport);
 const scenario=(name,revenue)=>({name,revenue,variableCost:600,displacedContribution:120,launchCost:100,exitCost:50,holdingCost:30,refs:[{source:0,page:4}]});
+test('Inventory recommendations can pause replenishment without claiming SKU exit and remain internal',()=>{
+  const r=copy();
+  r.assessment.skuImpact.rows=[{sku:'INTERNAL-OLD-500',relationship:'同用途',action:'暂停补货',reason:'现有库存足够且补货可取消，建议买方确认暂停。',exitCondition:'保留在售，不自动下架；替换需试销与售后安排。',refs:[{source:0,page:4}]}];
+  assert.doesNotThrow(()=>validateReport(r,manifest));
+  assert.match(reportHTML(r),/暂停补货/);
+  assert.doesNotMatch(reportHTML(supplierSnapshot(r)),/INTERNAL-OLD-500|暂停补货/);
+  r.assessment.skuImpact.rows[0].refs=[];
+  assert.throws(()=>validateReport(r,manifest));
+});
 test('Brief keeps priorities bounded and validates every product and price source',()=>{
   const r=copy();r.assessment.brief.priorities.push(r.assessment.brief.priorities[0]);
   assert.throws(()=>validateReport(r,manifest));

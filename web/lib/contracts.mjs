@@ -25,7 +25,7 @@ export const AssessmentSchema=z.object({
   brief:BriefSchema.optional(),
   criteria:z.array(CriterionSchema).length(5).refine(xs=>new Set(xs.map(x=>x.id)).size===5,'五个评分维度不可重复'),
   opportunities:z.array(z.object({title:z.string().min(1).max(160),detail:str,refs:RefsSchema})).max(4),
-  skuImpact:z.object({summary:str,rows:z.array(z.object({sku:z.string().min(1).max(160),relationship:str,action:z.enum(['保留','并行试销','评估替换','待核验']),reason:str,exitCondition:str,refs:RefsSchema})).max(12)}),
+  skuImpact:z.object({summary:str,rows:z.array(z.object({sku:z.string().min(1).max(160),relationship:str,action:z.enum(['保留','暂停补货','减少补货','并行试销','评估替换','待核验']),reason:str,exitCondition:str,refs:RefsSchema})).max(12)}),
   economics:z.object({currency:z.string().regex(/^[A-Z]{3}$/),period:z.string().min(1).max(100),basis:str,scenarios:z.array(z.object({name:z.enum(['保守','基准','乐观']),revenue:money,variableCost:money,displacedContribution:money,launchCost:money,exitCost:money,holdingCost:money,refs:RefsSchema})).length(3).refine(xs=>new Set(xs.map(x=>x.name)).size===3,'情景不可重复')}).nullable()
 });
 export const ReportSchema = z.object({
