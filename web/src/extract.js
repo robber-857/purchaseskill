@@ -51,7 +51,8 @@ export async function extractFiles(files,maxPages,onProgress=()=>{}){
           extracted.push(page(index,n,text,[img],text.trim()?[]:['本页为图片或无法提取文字，需视觉模型/人工阅读。']));p.cleanup();
         }
       }finally{await task.destroy();}
-    }else if(ext==='pptx')extracted=await pptx(bytes,index,remaining,onProgress);
+    }else if(['xlsx','xls','csv'].includes(ext)){const {spreadsheetPages}=await import('../lib/spreadsheets.mjs');extracted=spreadsheetPages(bytes,ext,index,remaining);}
+    else if(ext==='pptx')extracted=await pptx(bytes,index,remaining,onProgress);
     else if(ext==='ppt')extracted=legacyPpt(bytes,index,remaining);
     else if(['png','jpg','jpeg','webp'].includes(ext))extracted=[page(index,1,'',[await resizedImage(file)],['图片缩放至长边最多 1400 像素；细小文字需要原件复核。'],'图片 1')];
     else {

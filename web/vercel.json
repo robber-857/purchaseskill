@@ -4,7 +4,7 @@
   "functions": { "api/index.mjs": { "maxDuration": 300, "includeFiles": "skill/**" } },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index" },
-    { "source": "/((?!assets/|demo-assets/|pdfjs/).*)", "destination": "/index.html" }
+    { "source": "/((?!assets/|demo-assets/|pdfjs/|templates/).*)", "destination": "/index.html" }
   ],
   "headers": [{ "source": "/(.*)", "headers": [
     { "key": "X-Content-Type-Options", "value": "nosniff" },

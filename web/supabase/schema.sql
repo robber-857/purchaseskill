@@ -22,13 +22,11 @@ insert into storage.buckets(id,name,public,file_size_limit)
 values('review-private','review-private',false,52428800)
 on conflict(id) do update set public=false;
 -- No public SELECT / INSERT policy on storage.objects. Use scoped signed upload URLs.
+-- Legacy signature retained for compatibility; new servers insert jobs directly.
+-- Daily task and cumulative storage quotas are no longer enforced.
 create or replace function public.reserve_review_job(p_job jsonb,p_daily_limit int,p_budget_bytes bigint)
 returns void language plpgsql security definer set search_path=public as $$
 begin
- perform pg_advisory_xact_lock(73482915);
- if (select count(*) from public.review_jobs where created_at>now()-interval '24 hours')>=p_daily_limit
- or (select coalesce(sum(reserved_bytes),0) from public.review_jobs)+(p_job->>'reserved_bytes')::bigint>p_budget_bytes
- then raise exception 'DEMO_QUOTA'; end if;
  insert into public.review_jobs(id,owner_hash,created_at,files,context,status,attempts,reserved_bytes)
  values((p_job->>'id')::uuid,p_job->>'owner_hash',(p_job->>'created_at')::timestamptz,p_job->'files',p_job->'context','uploading',0,(p_job->>'reserved_bytes')::bigint);
 end $$;

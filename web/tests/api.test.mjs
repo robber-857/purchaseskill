@@ -43,4 +43,36 @@ test('A new AI upload without a decision brief is rejected instead of saving a v
   try{const result=await request('generate',{id:j.id,token:j.token,body:{}});assert.equal(result.status,400);assert.match(result.data.error,/决策摘要/);const persisted=await request('job',{id:j.id,token:j.token});assert.equal(persisted.data.report,null);assert.equal(persisted.data.status,'failed');}
   finally{process.env.AI_API_KEY='';process.env.AI_MODEL='';await new Promise(r=>mock.close(r));}
 });
+test('Internal source roles and content reach AI but never supplier shares',async()=>{
+  const internal='SKU,库存\nPRIVATE-001,123';
+  const combined=[...files,{name:'internal.csv',size:Buffer.byteLength(internal),type:'text/csv',role:'internal'}];
+  const created=await request('create',{body:{invite:'test-invite-only',files:combined,context}});assert.equal(created.status,201);
+  const j=created.data;
+  const pages={...manifest,pages:[...manifest.pages,{file:1,page:1,label:'SKU 行1–2',text:internal,images:[],limitations:[]}]};
+  for(const [target,content] of [[j.targets[0],source],[j.targets[1],internal],[j.manifestTarget,JSON.stringify(pages)]]){
+    const r=await fetch(base+target.url,{method:'PUT',headers:{Authorization:'Bearer '+j.token},body:content});assert.equal(r.status,200);
+  }
+  let prompt;
+  const mock=http.createServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;prompt=JSON.parse(body);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(mockReport())}}]}));});
+  await new Promise(r=>mock.listen(0,'127.0.0.1',r));process.env.AI_BASE_URL=`http://127.0.0.1:${mock.address().port}`;process.env.AI_API_KEY='test';process.env.AI_MODEL='mock';
+  try{
+    const result=await request('generate',{id:j.id,token:j.token,body:{}});assert.equal(result.status,200);
+    const metadata=JSON.parse(prompt.messages[1].content[0].text);assert.deepEqual(metadata.files.map(f=>f.role),['supplier','internal']);assert.match(JSON.stringify(prompt.messages[1]),/PRIVATE-001/);
+    assert.equal(result.data.report.files[1].role,'internal');
+    const shared=await request('share',{id:j.id,token:j.token,body:{audience:'supplier'}});
+    const exported=await request('shared&token='+shared.data.path.split('#')[1]);assert.equal(exported.status,200);assert.equal(exported.data.report.files,undefined);assert.doesNotMatch(JSON.stringify(exported.data),/PRIVATE-001|internal.csv/);
+  }finally{process.env.AI_API_KEY='';process.env.AI_MODEL='';await new Promise(r=>mock.close(r));}
+});
+test('Task creation ignores retired quotas beyond 10 jobs and 700 MiB reserved',async()=>{
+  process.env.DAILY_JOB_LIMIT='1';process.env.STORAGE_BUDGET_MB='1';
+  try{
+    const ids=new Set();
+    // Metadata only: 45 tasks reserve over 700 MiB without uploading large files.
+    for(let i=0;i<45;i++){
+      const result=await request('create',{body:{invite:'test-invite-only',files,context}});
+      assert.equal(result.status,201,JSON.stringify(result.data));ids.add(result.data.id);
+    }
+    assert.equal(ids.size,45);
+  }finally{delete process.env.DAILY_JOB_LIMIT;delete process.env.STORAGE_BUDGET_MB;}
+});
 test.after(async()=>{await new Promise(r=>server.close(r));});

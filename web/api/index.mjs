@@ -7,7 +7,7 @@ import {cachedReview} from '../lib/sample-cache.mjs';
 export const config={maxDuration:300};
 const hash=s=>createHash('sha256').update(s).digest('hex');
 function equal(a,b){return timingSafeEqual(Buffer.from(hash(a)),Buffer.from(hash(b)));}
-function settings(){const number=(k,f,max)=>Math.max(1,Math.min(max,Number(process.env[k])||f));return {maxFileMB:number('MAX_FILE_MB',50,100),maxTotalMB:number('MAX_TOTAL_MB',100,100),maxPages:number('MAX_PAGES',80,80),daily:number('DAILY_JOB_LIMIT',10,100),budget:number('STORAGE_BUDGET_MB',700,100000)*MB,shareDays:number('SHARE_DAYS',7,30)};}
+function settings(){const number=(k,f,max)=>Math.max(1,Math.min(max,Number(process.env[k])||f));return {maxFileMB:number('MAX_FILE_MB',50,100),maxTotalMB:number('MAX_TOTAL_MB',100,100),maxPages:number('MAX_PAGES',80,80),shareDays:number('SHARE_DAYS',7,30)};}
 export async function readBody(req,limit=32000){
   if(req.body!==undefined){const result=typeof req.body==='string'?req.body:JSON.stringify(req.body);if(Buffer.byteLength(result)>limit)throw new Error('请求过大');return JSON.parse(result);}
   const parts=[];let size=0;for await(const p of req){size+=p.length;if(size>limit)throw new Error('请求过大');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');
@@ -31,7 +31,7 @@ export default async function handler(req,res){
       const input=CreateSchema.parse(await readBody(req));if(process.env.DEMO_INVITE_CODE&&!equal(input.invite,process.env.DEMO_INVITE_CODE))return reply({error:'邀请码不正确'},403);
       validateFiles(input.files,limits.maxFileMB,limits.maxTotalMB);
       const token=randomBytes(32).toString('hex');const job={id:crypto.randomUUID(),owner_hash:hash(token),created_at:new Date().toISOString(),files:input.files,context:input.context,status:'uploading',attempts:0,reserved_bytes:input.files.reduce((s,f)=>s+f.size,0)+16*MB,report:null,error:null};
-      await store.reserve(job,limits);const targets=[];for(let i=0;i<input.files.length;i++)targets.push(await store.uploadTarget(job,i));const manifestTarget=await store.uploadTarget(job,'manifest');return reply({id:job.id,token,targets,manifestTarget},201);
+      await store.reserve(job);const targets=[];for(let i=0;i<input.files.length;i++)targets.push(await store.uploadTarget(job,i));const manifestTarget=await store.uploadTarget(job,'manifest');return reply({id:job.id,token,targets,manifestTarget},201);
     }
     const id=url.searchParams.get('id');const job=await owner(req,id);
     if(action==='job'&&req.method==='GET')return reply(publicJob(job));
@@ -47,7 +47,7 @@ export default async function handler(req,res){
         // The saved Warmies report remains available through the explicit example page.
         const cached=process.env.AI_API_KEY&&process.env.AI_MODEL?null:cachedReview(await store.firstFileDigest(job),job.context);
         const result=cached||await analyze(manifest,job.files,job.context);
-        const report={...result.report,mode:result.mode,model:result.model,usage:result.usage,requestId:result.requestId,ruleVersion:result.ruleVersion,createdAt:new Date().toISOString(),files:job.files.map(({name,size})=>({name,size})),coverage:{pages:manifest.pages.length,images:manifest.pages.reduce((n,p)=>n+p.images.length,0),textPages:manifest.pages.filter(p=>p.text.trim()).length},market:job.context.market,purpose:job.context.purpose};
+        const report={...result.report,mode:result.mode,model:result.model,usage:result.usage,requestId:result.requestId,ruleVersion:result.ruleVersion,createdAt:new Date().toISOString(),files:job.files.map(({name,size,role})=>({name,size,role:role||'supplier'})),coverage:{pages:manifest.pages.length,images:manifest.pages.reduce((n,p)=>n+p.images.length,0),textPages:manifest.pages.filter(p=>p.text.trim()).length},market:job.context.market,purpose:job.context.purpose};
         await store.updateJob(job.id,{status:'completed',report,error:null,lock_until:null});return reply({id:job.id,status:'completed',report});
       }catch(error){await store.updateJob(job.id,{status:'failed',error:error.message.slice(0,1000),lock_until:null});throw error;}
     }
