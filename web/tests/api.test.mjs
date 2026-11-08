@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 process.env.LOCAL_DATA_DIR=resolve('../output/api-tests',randomUUID());
 process.env.DEMO_INVITE_CODE='test-invite-only';
-process.env.AI_API_KEY='';process.env.AI_MODEL='';process.env.SUPABASE_URL='';process.env.SUPABASE_SERVICE_ROLE_KEY='';delete process.env.VERCEL;
+process.env.AI_API_KEY='';process.env.AI_MODEL='';process.env.FIRECRAWL_API_KEY='';process.env.SUPABASE_URL='';process.env.SUPABASE_SERVICE_ROLE_KEY='';delete process.env.VERCEL;
 const {default:handler}=await import('../api/index.mjs');
 const {basicReport}=await import('../lib/analyze.mjs');
 const mockReport=()=>({...basicReport(manifest,files,context),assessment:{brief:{takeaway:'先确认型号和报价，再决定是否采购。',price:{quote:'未知',comparison:'未知',judgment:'补报价后再比较。',refs:[]},facts:[],priorities:[{title:'型号未确认',why:'无法对应报价。',action:'请供应商确认型号。',refs:[]}],portfolio:'暂无现有商品数据。',nextAction:'先确认型号。'},criteria:['fit','quality','commercial','portfolio','economics'].map(id=>({id,status:'missing',basis:'未提供本维度依据',refs:[]})),opportunities:[],skuImpact:{summary:'未提供现有 SKU',rows:[]},economics:null}});
@@ -74,5 +74,18 @@ test('Task creation ignores retired quotas beyond 10 jobs and 700 MiB reserved',
     }
     assert.equal(ids.size,45);
   }finally{delete process.env.DAILY_JOB_LIMIT;delete process.env.STORAGE_BUDGET_MB;}
+});
+test('market edits persist privately, search failures preserve quotes, supplier share excludes comparisons',async()=>{
+  const j=await create();const auth={id:j.id,token:j.token};
+  await request('generate',{...auth,body:{}});
+  const offer={product:'测试企鹅',platform:'1688',title:'PRIVATE-MARKET-QUOTE',url:'https://detail.1688.com/offer/123.html',seller:'供应商',model:'同规格',kind:'批发',price:80,currency:'CNY',unit:'件',moq:50,quantity:100,taxShippingIncluded:true,sameSpecification:true,delivery:'7天',afterSales:'待确认',conditions:'无',observedAt:'2026-11-08'};
+  assert.equal((await request('market',{id:j.id,body:{offers:[offer]}})).status,403);
+  assert.equal((await request('market',{...auth,body:{offers:[{...offer,price:-1}]}})).status,400);
+  const saved=await request('market',{...auth,body:{offers:[offer],baseline:{product:'测试企鹅',price:100,currency:'CNY',unit:'件',quantity:100,taxShippingIncluded:true}}});assert.equal(saved.status,200);
+  const searched=await request('market',{...auth,body:{keyword:'测试企鹅'}});assert.equal(searched.data.report.marketComparison.status,'not_configured');assert.equal(searched.data.report.marketComparison.offers.length,1);
+  assert.equal((await request('job',auth)).data.report.marketComparison.baseline.price,100);
+  const shared=await request('share',{...auth,body:{audience:'supplier'}});
+  const read=await request('shared&token='+shared.data.path.split('#')[1]);assert.doesNotMatch(JSON.stringify(read.data),/PRIVATE-MARKET-QUOTE|marketComparison|测试企鹅/);
+  const removed=await request('market',{...auth,body:{offers:[]}});assert.equal(removed.data.report.marketComparison.offers.length,0);
 });
 test.after(async()=>{await new Promise(r=>server.close(r));});

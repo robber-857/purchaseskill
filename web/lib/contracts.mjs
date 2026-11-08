@@ -3,7 +3,7 @@ export const MB = 1024 * 1024;
 export const EXTENSIONS = ['pdf','pptx','ppt','png','jpg','jpeg','webp','txt','docx','xlsx','xls','csv'];
 export const extension = name => name.toLowerCase().split('.').pop();
 export const FileSchema = z.object({name:z.string().min(1).max(180),size:z.number().int().positive(),type:z.string().max(150),role:z.enum(['supplier','internal']).default('supplier')});
-export const CreateSchema = z.object({invite:z.string().max(256).default(''),files:z.array(FileSchema).min(1).max(6),context:z.object({market:z.string().min(1).max(80),purpose:z.enum(['转售商品','自用设备 / 软件','原料 / 耗材']),focus:z.string().max(1000).default('')})});
+export const CreateSchema = z.object({invite:z.string().max(256).default(''),files:z.array(FileSchema).min(1).max(6),context:z.object({market:z.string().min(1).max(80),purpose:z.enum(['转售商品','自用设备 / 软件','原料 / 耗材']),focus:z.string().max(1000).default(''),searchKeyword:z.string().trim().max(100).default('')})});
 const ImageSchema = z.string().max(550000).regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/);
 export const PageSchema = z.object({file:z.number().int().nonnegative(),page:z.number().int().positive(),label:z.string().max(100),text:z.string().max(14000),images:z.array(ImageSchema).max(3),limitations:z.array(z.string().max(400)).max(12)});
 export const ManifestSchema = z.object({version:z.literal(1),pages:z.array(PageSchema).min(1).max(80),warnings:z.array(z.string().max(400)).max(80)});

@@ -1,3 +1,4 @@
+import {marketHTML} from './market-report.js';
 import {scoreAssessment,economicsSummary} from '../lib/assessment.mjs';
 
 export const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -87,6 +88,7 @@ export function reportHTML(r,{interactive=true}={}){
       ${facts.length?`<div class="brief-facts">${facts.map(x=>`<div><span>${escape(x.label)}</span><strong>${escape(x.value)}</strong><p>${escape(x.meaning)}</p></div>`).join('')}</div>`:''}
       ${base?`<div class="brief-earnings"><strong>按基准情况，扣除相关成本后${base.net>=0?'预计多赚':'预计少赚'} ${amount(Math.abs(base.net),economics.currency)}</strong><p>${escape(economics.period)}；提供的情景结果为 ${amount(low,economics.currency)} 至 ${amount(high,economics.currency)}。${low<0?'较差情况下可能亏损，需先控制试单规模。':'仍需验证实际销量。'}不是财务净利润或收益承诺。</p></div>`:''}
     </section>
+    ${marketHTML(r.marketComparison)}
     <section id="priorities">${heading('02','最影响决策的事',priorities.length?'按重要程度排序':'先核对关键问题')}
       ${priorities.length?`<ol class="priority-list">${priorities.map(x=>`<li><h3>${escape(x.title)}</h3><p>${escape(x.why)}</p><p class="priority-action"><span>建议</span>${escape(x.action)}</p></li>`).join('')}</ol>`:`<p>这份报告尚未整理重点摘要。请展开详细依据核对${r.risks.length}项问题，重新生成报告后可查看按重要程度排序的建议。</p>`}
     </section>
