@@ -1,3 +1,4 @@
+import {durableFile} from './file-copy.js';
 // Browser-local reusable files. No shared global dataset in an invite-only app.
 const database=new Promise((resolve,reject)=>{
   const request=indexedDB.open('purchase-review-internal',1);
@@ -14,5 +15,5 @@ async function transaction(mode,action){
   });
 }
 export const listInternal=()=>transaction('readonly',store=>store.getAll());
-export const saveInternal=items=>transaction('readwrite',store=>{for(const item of items)store.put(item);});
+export const saveInternal=async items=>{const copies=await Promise.all(items.map(async item=>({...item,file:await durableFile(item.file)})));return transaction('readwrite',store=>{for(const item of copies)store.put(item);});};
 export const removeInternal=id=>transaction('readwrite',store=>store.delete(id));

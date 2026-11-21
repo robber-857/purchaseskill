@@ -20,7 +20,7 @@ test('Manifest rejects invented file references, duplicate pages, and missing fi
 });
 test('Basic mode identifies itself and does not fabricate product analysis',()=>{
   const report=basicReport(manifest,files,{market:'中国',purpose:'转售商品'});
-  assert.match(report.summary,/未调用 AI/);assert.equal(report.products.length,0);assert.equal(report.decision,'待补资料');
+  assert.match(report.summary,/资料摘录.*仍需人工评估/);assert.equal(report.products.length,0);assert.equal(report.decision,'待补资料');
   assert.equal(validateReport(report,manifest).evidence[0].status,'observed');
   assert.throws(()=>validateReport({...report,evidence:[{...report.evidence[0],status:'verified'}]},manifest));
   assert.throws(()=>validateReport({...report,evidence:[{...report.evidence[0],page:99}]},manifest));
@@ -39,4 +39,9 @@ test('Cached review requires identical original bytes and exact assessment conte
   assert.equal(cachedReview('not-the-same-file',context),null);
   assert.equal(cachedReview(WARMIES_SHA256,{...context,market:'澳大利亚'}),null);
   assert.equal(cachedReview(WARMIES_SHA256,{...context,focus:'只看围巾'}),null);
+});
+
+test('Supplier feedback is product-specific and excludes internal SKU and analysis',()=>{
+ const report={createdAt:'2026-11-12',files:[{role:'supplier'},{role:'internal'}],products:[{name:'500ml保温杯',source:0,page:1},{name:'运动棉袜',source:0,page:2},{name:'PRIVATE-STOCK',source:1,page:1}],summary:'PRIVATE-MARGIN',assessment:{skuImpact:{summary:'PRIVATE-COST'}}};
+ const result=supplierSnapshot(report);assert.equal(result.supplierProducts.length,2);assert.match(result.supplierProducts[0].samples.join(' '),/密封防漏/);assert.match(result.supplierProducts[1].samples.join(' '),/缩水/);assert.doesNotMatch(JSON.stringify(result),/PRIVATE/);const html=reportHTML(result);assert.match(html,/规格确认与样品要求/);assert.match(html,/逐款样品要求/);assert.match(html,/500ml保温杯/);
 });

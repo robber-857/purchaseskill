@@ -23,6 +23,13 @@ export const BriefSchema=z.object({
 });
 export const AssessmentSchema=z.object({
   brief:BriefSchema.optional(),
+  rangeReview:z.object({
+    products:z.array(z.object({name:short,specification:short,quote:short,retailPrice:short,
+      recommendation:z.enum(['优先评估','第二阶段','暂缓','待确认']),role:short,reason:str,conditions:str,refs:RefsSchema})).max(12),
+    requirements:z.array(z.object({category:short,items:z.array(short).min(1).max(10)})).max(20)
+      .transform(groups=>Object.entries(Object.groupBy(groups,g=>g.category)).map(([category,xs])=>({category,items:[...new Set(xs.flatMap(x=>x.items))]}))),
+    steps:z.array(z.object({title:short,detail:str})).min(1).max(4)
+  }).optional(),
   criteria:z.array(CriterionSchema).length(5).refine(xs=>new Set(xs.map(x=>x.id)).size===5,'五个评分维度不可重复'),
   opportunities:z.array(z.object({title:z.string().min(1).max(160),detail:str,refs:RefsSchema})).max(4),
   skuImpact:z.object({summary:str,rows:z.array(z.object({sku:z.string().min(1).max(160),relationship:str,action:z.enum(['保留','暂停补货','减少补货','并行试销','评估替换','待核验']),reason:str,exitCondition:str,refs:RefsSchema})).max(12)}),
@@ -51,13 +58,24 @@ export function validateReport(input,manifest){
   const assessmentRefs=report.assessment?[...report.assessment.criteria,...report.assessment.opportunities,...report.assessment.skuImpact.rows,...(report.assessment.economics?.scenarios||[])].flatMap(x=>x.refs):[];
   const brief=report.assessment?.brief;
   if(brief)assessmentRefs.push(...brief.price.refs,...brief.facts.flatMap(x=>x.refs),...brief.priorities.flatMap(x=>x.refs));
+  if(report.assessment?.rangeReview)assessmentRefs.push(...report.assessment.rangeReview.products.flatMap(x=>x.refs));
   for(const e of [...report.evidence,...report.products,...assessmentRefs])if(!refs.has(`${e.source}:${e.page}`))throw new Error('模型返回了不存在的来源页码，请人工检查或重试');
   return report;
 }
 export function supplierSnapshot(report){
-  // Intentionally fixed request text. No model prose or internal context crosses this boundary.
-  return {title:'供应商资料补充清单',summary:'请针对拟供产品补充以下资料，以便继续开展采购评估。此清单不构成采购承诺。',decision:'待补资料',products:[],evidence:[],risks:[],
-    missing:['具体型号、尺寸、材质、包装及适用场景','正式报价、计价单位、MOQ、交期、付款与售后条款','品牌与渠道授权、本型号适用的检测报告及使用说明'],
-    nextSteps:['请先确认供货型号，并提供可对应型号的完整资料。','样品数量、验收要求及商业条件另行书面确认。'],
-    limitations:['供应商版为独立的通用补件模板，不包含内部评审、原始附件或经营数据。'],mode:'supplier',createdAt:report.createdAt};
+  // Only supplier-attributed product names cross this boundary. Never copy internal model recommendations.
+  const review=report.supplierReview?.version===3?report.supplierReview:null;
+  const names=review?review.products.map(p=>p.name):[...new Set((report.products||[]).filter(p=>Number.isInteger(p.source)&&report.files?.[p.source]&&report.files[p.source].role!=='internal'&&Number.isInteger(p.page)).map(p=>String(p.name).slice(0,160)))].slice(0,12);
+  const supplierProducts=names.map(name=>{
+    let specifications=['正式型号、材质/成分、尺寸或容量、包装及条码','适用场景、使用说明与本型号合规资料'];
+    let samples=['提供与拟供型号一致的样品，并标明型号、批次及规格','共同确认功能、外观、包装及运输保护的验收方式'];
+    if(/杯|保温|钛|水壶/.test(name)){specifications=['确认容量、杯身/内胆/杯盖材质及食品接触部件','确认保温条件、重量、尺寸、密封结构和礼盒配置','提供对应型号的食品接触检测、使用与清洁说明'];samples=['提供拟供容量、材质和杯盖版本的样品，标注实测容量与重量','双方约定保温、密封防漏、异味及清洗检查方法','检查杯口、涂层、配件及包装运输保护；礼盒款另核对包装配置'];}
+    else if(/袜|sock/i.test(name)){specifications=['确认纤维成分比例、尺码、筒高、厚度与每包双数','确认颜色、织法、洗护标签、包装条码及对应型号检测','说明批次色差、尺码公差及质量问题处理方式'];samples=['按拟供尺码和颜色提供样品，注明对应批次','双方约定缩水、色牢度、起球、缝头与弹性检查方法','确认穿着舒适性、左右一致性及包装标签；试穿和洗涤条件需书面约定'];}
+    else if(/warmies|毛绒|企鹅|龙|玩偶/i.test(name)){specifications=['确认款式型号、尺寸、重量、面料、填充物及适用年龄','如支持加热，请确认功率/时间限制、填充物、香味及禁用情形','提供适用销售市场的标签、检测、授权与使用说明'];samples=['提供与拟供款式、尺寸及填充版本一致的样品','检查缝合、掉毛、填充均匀度、异味与标签完整性','仅按已确认说明书检查加热/保温表现；先确认安全方法，不擅自设定加热参数'];}
+    return {name,specificationStatus:'待供应商逐项书面确认',specifications,samples};
+  });
+  return {supplierReview:review,title:review?'供应商产品评估与商务沟通报告':'供应商资料补充清单',summary:review?review.summary:supplierProducts.length?`本轮围绕 ${supplierProducts.length} 款候选产品确认规格、样品与供货条件。请按产品逐项回复；确认完整资料及样品方案后，再讨论后续采购安排。`:'请先确认拟供产品的具体名称与型号，再逐款补充规格、样品及供货资料。',decision:'待补资料',products:[],evidence:[],risks:[],supplierProducts,supplierVersion:review?3:2,
+    missing:['请提供逐SKU的正式报价、计价单位、含税与运费口径、MOQ及报价有效期','请确认混箱政策、外箱装数、箱规、供货周期、付款与退换/售后条款','请提供品牌供货授权、产品溯源及目标市场适用的合规资料；按型号对应','请确认样品数量、样品费用、寄送时间及费用承担方式；具体数量另行约定'],
+    nextSteps:['资料与规格确认：按上方候选产品逐项回复，提供对应型号的资料，注明尚待确认事项。','样品方案确认：双方书面约定样品版本、数量、费用、测试条件及验收标准。','样品评估：记录问题与整改措施；本清单中的检查项目不代表产品已通过测试。','后续商务讨论：资料和样品结果确认后，再共同确定试销产品、数量、交付与售后安排。'],
+    limitations:['本清单为按供应商候选产品整理的商务沟通稿，不构成采购承诺。','规格与样品检查均为待确认事项，不代表已完成检验或满足法规。','本版不含内部库存、成本、采购底价、评分与竞品分析。'],mode:'supplier',createdAt:report.createdAt};
 }

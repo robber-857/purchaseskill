@@ -6,7 +6,34 @@ import {warmiesReport} from '../src/sample.js';
 import {reportHTML} from '../src/report.js';
 const manifest={pages:[1,4,22,30].map(page=>({file:0,page}))};
 const copy=()=>structuredClone(warmiesReport);
+test('fixed range format validates references and keeps product decisions out of supplier export',()=>{
+  const r=copy();r.assessment.rangeReview={products:[{name:'PRIVATE-CANDIDATE',specification:'150g',quote:'CNY 20 / 盒',retailPrice:'未提供',recommendation:'优先评估',role:'入门款',reason:'<script>unsafe</script>',conditions:'先确认税运',refs:[{source:0,page:4}]}],requirements:[{category:'商务与供货',items:['确认MOQ']}],steps:[{title:'样品验证',detail:'由买方确认验收条件'}]};
+  assert.doesNotThrow(()=>validateReport(r,manifest));
+  r.assessment.rangeReview.requirements.push({category:'需求与经营数据',items:['确认实际需求']},{category:'商务与供货',items:['确认MOQ','确认交期']});
+  const normalized=validateReport(r,manifest).assessment.rangeReview.requirements;
+  assert.equal(normalized.length,2);assert.deepEqual(normalized[0].items,['确认MOQ','确认交期']);
+  const html=reportHTML(r);assert.match(html,/PRIVATE-CANDIDATE/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
+  for(const id of ['candidates','highlights','requirements','actions','scoring'])assert.match(html,new RegExp(`id="${id}"`));
+  assert.doesNotMatch(reportHTML(supplierSnapshot(r)),/PRIVATE-CANDIDATE/);
+  r.assessment.rangeReview.products[0].refs[0].page=999;assert.throws(()=>validateReport(r,manifest));
+});
 const scenario=(name,revenue)=>({name,revenue,variableCost:600,displacedContribution:120,launchCost:100,exitCost:50,holdingCost:30,refs:[{source:0,page:4}]});
+test('Brief leads with the recorded next action and keeps one title and one scoring section',()=>{
+  const r=copy();
+  r.ruleVersion='INTERNAL_RULE_ID';
+  r.model='INTERNAL_MODEL_ID';
+  const html=reportHTML(r,{interactive:false});
+  const appendix=html.indexOf('<details id="evidence"');
+  assert.ok(appendix>0);
+  assert.ok(html.slice(0,html.indexOf('id="priorities"')).includes(r.assessment.brief.nextAction));
+  assert.ok(html.indexOf('id="scoring"')>appendix);
+  assert.equal(html.match(/<h1>/g)?.length,1);
+  assert.doesNotMatch(html,/INTERNAL_RULE_ID|INTERNAL_MODEL_ID/);
+  delete r.assessment;
+  const old=reportHTML(r);
+  assert.ok(old.slice(0,old.indexOf('id="price"')).includes(r.risks[0].detail));
+  assert.doesNotMatch(old,/重新生成后可查看|结构化评分|尚未生成逐款评估/);
+});
 test('Inventory recommendations can pause replenishment without claiming SKU exit and remain internal',()=>{
   const r=copy();
   r.assessment.skuImpact.rows=[{sku:'INTERNAL-OLD-500',relationship:'同用途',action:'暂停补货',reason:'现有库存足够且补货可取消，建议买方确认暂停。',exitCondition:'保留在售，不自动下架；替换需试销与售后安排。',refs:[{source:0,page:4}]}];

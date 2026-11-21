@@ -4,12 +4,12 @@ import { validateReport } from './contracts.mjs';
 import { ASSESSMENT_RULES } from './assessment-rules.mjs';
 export function basicReport(manifest,files,context){
   const evidence=manifest.pages.filter(p=>p.text.trim()).slice(0,12).map(p=>({claim:'资料原文摘录：'+p.text.slice(0,500),status:'observed',source:p.file,page:p.page,limitation:'只证明资料中出现了这些文字；未判断真实性、未理解图片含义，也未核验供应商声明。'}));
-  if(!evidence.length)evidence.push({claim:'已接收并生成页面图像预览，但未获得可提取文字。',status:'observed',source:0,page:manifest.pages[0].page,limitation:'图片尚未经模型识别；不能据此判断产品信息。'});
-  return {title:files[0].name.replace(/\.[^.]+$/,'')+' · 资料初筛',summary:`已整理 ${files.length} 份文件、${manifest.pages.length} 个页面/内容片段。目标市场：${context.market}；用途：${context.purpose}。本报告由固定规则整理来源与通用补件要求，未调用 AI，尚未对产品作语义评估。`,decision:'待补资料',products:[],evidence,
-    risks:[{title:'产品判断尚未完成',detail:'需要启用视觉模型或由评审人逐页阅读，才能形成产品摘要、识别声明冲突和评估适配性。'}],
-    missing:['确认具体产品型号、采购需求及验收标准。','确认文件是否包含正式报价、MOQ、交期、授权及检测材料；基础模式不会自动判定这些资料缺失。','提供现有方案及真实采购成本，才能开展经济测算。'],
-    nextSteps:['先查看逐页预览，确认文件完整且可读。','启用模型分析或安排人工评审后，再形成采购建议。'],
-    limitations:['基础初筛使用固定规则，不是 AI 语义评估。','没有进行联网核验，也没有计算利润、销量或库存替代。',...manifest.warnings].slice(0,16)};
+  if(!evidence.length)evidence.push({claim:'已接收并生成页面图像预览，但未获得可提取文字。',status:'observed',source:0,page:manifest.pages[0].page,limitation:'请对照原图确认产品名称、规格及相关说明。'});
+  return {title:files[0].name.replace(/\.[^.]+$/,'')+' · 资料初筛',summary:`已整理 ${files.length} 份文件、${manifest.pages.length} 个页面/内容片段。本次面向${context.market}，用于${context.purpose}。以下为资料摘录与待核对事项，产品是否适合采购仍需人工评估。`,decision:'待补资料',products:[],evidence,
+    risks:[{title:'产品判断尚未完成',detail:'请先对照原件确认型号、规格和报价，再判断商品能否满足采购需求。'}],
+    missing:['确认具体产品型号、采购需求及验收标准。','核对资料中是否包含正式报价、起订量、交期、授权及对应型号的检测材料。','提供现有方案及真实采购成本，才能开展经济测算。'],
+    nextSteps:['先查看逐页预览，确认文件完整且可读。','请由评审人核对型号与商务条件，再决定是否安排样品。'],
+    limitations:['资料摘录仅说明文件中记载的内容，尚未核实供应商声明。','产品声明需另行核实。收益和库存影响需要实际报价与经营数据。',...manifest.warnings].slice(0,16)};
 }
 export async function analyze(manifest,files,context){
   if(!process.env.AI_API_KEY||!process.env.AI_MODEL)return {report:basicReport(manifest,files,context),mode:'basic',model:null,ruleVersion:'basic-v1'};

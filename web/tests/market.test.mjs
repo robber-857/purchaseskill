@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {searchMarket,compareOffers,MarketInputSchema,safeMarketURL,chinaMarketComparison,marketPageType,inspectMarketPage} from '../lib/market.mjs';
+import {searchMarket,compareOffers,MarketInputSchema,safeMarketURL,chinaMarketComparison,marketPageType,inspectMarketPage,verifyMarketSources,sourceProductImage} from '../lib/market.mjs';
 import {marketHTML} from '../src/market-report.js';
 import {supplierSnapshot} from '../lib/contracts.mjs';
 import {reportHTML} from '../src/report.js';
 const baseline={product:'企鹅',price:100,currency:'CNY',unit:'件',quantity:100,taxShippingIncluded:true};
 const offer={product:'企鹅',platform:'1688',title:'企鹅对照款',url:'https://detail.1688.com/offer/123.html',seller:'商家',model:'同规格',kind:'批发',price:80,currency:'CNY',unit:'件',moq:50,quantity:100,taxShippingIncluded:true,sameSpecification:true,delivery:'7天',afterSales:'待确认',conditions:'无促销',observedAt:'2026-11-08'};
+test('multiple product candidates retain distinct links and only safe source images',async()=>{
+  assert.equal(marketPageType('https://item.taobao.com/item.htm?id=123'),'product');
+  assert.equal(marketPageType('https://item.taobao.com/item.htm'),'listing');
+  assert.equal(sourceProductImage({metadata:{ogImage:'javascript:alert(1)'}}),null);
+  assert.equal(sourceProductImage({metadata:{ogImage:'https://127.0.0.1/p.png'}}),null);
+  const items=[1,2,3].map(i=>({product:'企鹅',title:'企鹅',platform:'1688',kind:'批发线索',url:`https://detail.1688.com/offer/${i}.html`,pageType:'product',priceMentions:['￥80']}));
+  const result=await verifyMarketSources({items},{key:'test',fetcher:async(_url,opts)=>({ok:true,json:async()=>({success:true,data:{markdown:JSON.parse(opts.body).url.endsWith('/3.html')?'CAPTCHA':'企鹅 ￥80',metadata:{ogImage:'https://img.alicdn.com/product.png'}}})})});
+  assert.equal(result.items.filter(x=>x.imageUrl).length,2);
+  const html=marketHTML(result);assert.match(html,/3 个公开候选/);assert.match(html,/<img /);assert.match(html,/referrerpolicy="no-referrer"/);
+  for(const i of [1,2,3])assert.ok(html.includes(`/offer/${i}.html`));
+  assert.match(html,/暂无可用商品图/);
+});
 test('source verification rejects login, captcha, redirects, listings and hidden product prices',()=>{
   const item={url:'https://item.jd.com/123.html',title:'304不锈钢保温杯500ml',pageType:'product',priceMentions:['￥69.00']};
   assert.equal(marketPageType('https://s.1688.com/kq/cup.html'),'listing');
@@ -15,6 +27,51 @@ test('source verification rejects login, captcha, redirects, listings and hidden
   assert.equal(inspectMarketPage({...item,pageType:'listing'},{markdown:item.title+' ￥69.00'}).status,'listing');
   assert.equal(inspectMarketPage(item,{markdown:'运费 ￥0.00'}).status,'unconfirmed');
   assert.equal(inspectMarketPage(item,{markdown:item.title+' ￥69.00'}).status,'page_observed');
+});
+test('covers match the listing and variant across tracked links and keep another photo when the primary is unavailable',async()=>{
+  const url='https://item.taobao.com/item.htm?id=4321';
+  const indexed='https://img.alicdn.com/index.jpg',thumbnail='https://img.alicdn.com/thumb.jpg';
+  const raw=await searchMarket(['玻璃杯'],{key:'test',fetcher:async()=>({ok:true,json:async()=>({data:{
+    web:[{url:url+'&track=1',title:'玻璃杯',thumbnailUrl:'//img.alicdn.com/index.jpg'}],
+    images:[{url:'https://www.taobao.com/list/item/4321.htm',thumbnailUrl:thumbnail},{url:url+'&skuId=20',imageUrl:'https://img.alicdn.com/variant.jpg'}]
+  }})})});
+  assert.equal(raw.items.length,2);
+  assert.deepEqual(raw.items[0].imageAlternatives,[thumbnail]);
+  const result=await verifyMarketSources(raw,{key:'test',fetcher:async()=>({ok:true,json:async()=>({success:true,data:{markdown:'玻璃杯',metadata:{
+    ogImage:['  ','javascript:bad','/goods/cover.jpg'],'twitter:image':'//img.alicdn.com/alt.jpg'
+  }}})})});
+  const primary=result.items[0];
+  assert.equal(primary.imageUrl,'https://item.taobao.com/goods/cover.jpg');
+  assert.deepEqual(primary.imageAlternatives,['https://img.alicdn.com/alt.jpg',indexed]);
+  const card=marketHTML({items:[primary]});
+  assert.ok(card.indexOf(indexed)<card.indexOf(primary.imageUrl),'the preferred image paints above its alternatives');
+  assert.doesNotMatch(card,/variant\.jpg|javascript:bad|onerror=/i);
+  assert.equal(sourceProductImage({metadata:{url,ogImage:' ',twitterImage:'#top'}}),null);
+  assert.equal(sourceProductImage({metadata:{ogImage:'//img.alicdn.com/a.jpg'}}),'https://img.alicdn.com/a.jpg');
+  assert.equal(sourceProductImage({metadata:{ogImage:'http://img.alicdn.com/a.jpg?utm_source=signature'}}),'https://img.alicdn.com/a.jpg?utm_source=signature');
+});
+test('a product without a social thumbnail can use its own product markup, excluding recommended items',async()=>{
+  const url='https://detail.1688.com/offer/123.html';
+  const rawHtml='<script type="application/ld+json">'+JSON.stringify({'@graph':[
+    {'@type':'Product',url:'https://detail.1688.com/offer/222.html',image:'https://img.alicdn.com/wrong.jpg'},
+    {'@type':'Product',url:url+'?track=one',image:[{'@type':'ImageObject',contentUrl:'/img/glass.jpg'}]}
+  ]})+'</script>';
+  const result=await verifyMarketSources({items:[{product:'玻璃杯',title:'玻璃杯',pageType:'product',url}]},{key:'test',fetcher:async(_,opts)=>{
+    assert.ok(JSON.parse(opts.body).formats.includes('rawHtml'));
+    return {ok:true,json:async()=>({success:true,data:{rawHtml,markdown:'玻璃杯'}})};
+  }});
+  assert.equal(result.items[0].imageUrl,'https://detail.1688.com/img/glass.jpg');
+  assert.doesNotMatch(JSON.stringify(result),/wrong\.jpg|rawHtml/);
+});
+test('old search failures and screenshot diagnostics are rendered as buyer actions',()=>{
+  const privateNote='HTTP 429 · OCR_ERROR_PRIVATE';
+  const result={status:'partial',searches:[{product:'杯子',platform:'1688',status:'failed',error:privateNote}],items:[{
+    product:'杯子',platform:'1688',url:offer.url,title:'杯子',ocr:{status:'failed',note:privateNote},verification:{status:'failed',note:privateNote},
+    capturedAt:'2026-11-20T01:30:00.000Z'
+  }]};
+  const html=marketHTML(result);
+  assert.doesNotMatch(html,/HTTP 429|OCR_ERROR|\.000Z/);
+  assert.match(html,/稍后重试/);assert.match(html,/价格待确认/);
 });
 test('public product prices require matching visible heading, amount and explicit currency',()=>{
   const item={url:'https://brand.example/products/bottle',title:'500ml Bottle - Brand',pageType:'product',priceMentions:[]};
@@ -44,6 +101,14 @@ test('price input rejects negative/nonfinite prices and platform spoofing',()=>{
 test('missing provider and missing products are explicit, no invented candidates',async()=>{
   const r=await searchMarket(['企鹅'],{key:''});assert.equal(r.status,'not_configured');assert.deepEqual(r.items,[]);
   assert.equal((await searchMarket([],{key:'key'})).status,'needs_product');
+});
+test('image search pairs pictures with their own allowed source, never with unrelated candidates',async()=>{
+  const r=await searchMarket(['企鹅'],{key:'test',fetcher:async(_url,opts)=>{
+    const domain=JSON.parse(opts.body).query.includes('1688.com')?'1688.com':'taobao.com';
+    return {ok:true,json:async()=>({data:{web:[],images:[{url:domain==='1688.com'?'https://detail.1688.com/offer/123.html':'https://www.taobao.com/list/item/123.htm',title:'企鹅图片候选',imageUrl:'https://img.alicdn.com/p.png'},{url:'https://evil.test/product',title:'错误来源',imageUrl:'https://img.alicdn.com/other.png'}]}})};
+  }});
+  assert.equal(r.items.length,2);assert.ok(r.items.every(x=>x.imageOrigin==='search_index'&&x.imageSourceURL===x.url));
+  assert.ok(r.items.every(x=>x.priceMentions.length===0));assert.doesNotMatch(marketHTML(r),/evil.test/);
 });
 test('search isolates platform failures, filters links and preserves raw price evidence',async()=>{
   const requests=[];

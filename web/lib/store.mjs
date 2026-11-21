@@ -52,3 +52,8 @@ export async function verifyOriginals(job){
   }
 }
 export async function getShared(hash){if(cloud()){const {data,error}=await db().from('review_jobs').select('shared_report,share_expires_at').eq('share_hash',hash).maybeSingle();check(error);return data;}return localTransaction(jobs=>{const j=jobs.find(x=>x.share_hash===hash);return j?{shared_report:j.shared_report,share_expires_at:j.share_expires_at}:null;});}
+
+export async function listWorkspaceJobs(workspace,offset=0){
+ if(cloud()){const {data,error,count}=await db().from('review_jobs').select('id,status,created_at,files,error',{count:'exact'}).eq('context->>workspaceId',workspace).order('created_at',{ascending:false}).order('id',{ascending:false}).range(offset,offset+49);check(error);return {items:data,total:count};}
+ return localTransaction(jobs=>{const items=jobs.filter(j=>j.context?.workspaceId===workspace).sort((a,b)=>b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));return {items:items.slice(offset,offset+50),total:items.length};});
+}

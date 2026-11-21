@@ -88,4 +88,46 @@ test('market edits persist privately, search failures preserve quotes, supplier 
   const read=await request('shared&token='+shared.data.path.split('#')[1]);assert.doesNotMatch(JSON.stringify(read.data),/PRIVATE-MARKET-QUOTE|marketComparison|测试企鹅/);
   const removed=await request('market',{...auth,body:{offers:[]}});assert.equal(removed.data.report.marketComparison.offers.length,0);
 });
+test('buyer OCR evidence persists privately and never reaches supplier shares',async()=>{
+  const j=await create(),auth={id:j.id,token:j.token};await request('generate',{...auth,body:{}});
+  const fake={blocked:false,offers:[{title:'PRIVATE-OCR-CUP',priceText:'￥19.90',currency:'CNY',specification:'500ml',unit:'只',conditions:'100只起订',evidenceText:'PRIVATE-OCR-CUP ￥19.90',matchesCandidate:true}]};
+  const mock=http.createServer(async(req,res)=>{for await(const _ of req){}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(fake)}}]}));});await new Promise(r=>mock.listen(0,'127.0.0.1',r));
+  process.env.AI_API_KEY='test';process.env.AI_MODEL='test';process.env.AI_BASE_URL=`http://127.0.0.1:${mock.address().port}`;
+  try{
+    const screenshot={sourceURL:'https://detail.1688.com/offer/123.html',title:'PRIVATE-OCR-CUP',image:'data:image/png;base64,aGVsbG8='};
+    assert.equal((await request('market',{id:j.id,body:{screenshot}})).status,403);
+    const result=await request('market',{...auth,body:{screenshot}});assert.equal(result.status,200);
+    assert.equal(result.data.report.marketComparison.items[0].ocr.buyerProvided,true);
+    assert.equal((await request('job',auth)).data.report.marketComparison.items[0].ocr.offers[0].priceText,'￥19.90');
+    const share=await request('share',{...auth,body:{audience:'supplier'}});
+    const read=await request('shared&token='+share.data.path.split('#')[1]);assert.doesNotMatch(JSON.stringify(read.data),/PRIVATE-OCR|screenshotData|aGVsbG8/);
+  }finally{process.env.AI_API_KEY='';process.env.AI_MODEL='';delete process.env.AI_BASE_URL;await new Promise(r=>mock.close(r));}
+});
 test.after(async()=>{await new Promise(r=>server.close(r));});
+
+test('Workspace cloud history requires separate login and scopes reads, claims and new jobs',async()=>{
+ process.env.HISTORY_ACCESS_KEY='a-long-independent-workspace-secret';process.env.HISTORY_WORKSPACE_ID='workspace-a';
+ try{
+  assert.equal((await request('history')).status,401);
+  assert.equal((await request('workspace-login',{body:{key:'test-invite-only'}})).status,403);
+  const response=await fetch(base+'/api/index?action=workspace-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:process.env.HISTORY_ACCESS_KEY})});assert.equal(response.status,200);const cookie=response.headers.get('set-cookie').split(';')[0];assert.match(response.headers.get('set-cookie'),/HttpOnly/);
+  const a=await create(),b=await create();await updateJob(b.id,{context:{...context,workspaceId:'workspace-b'}});
+  assert.equal((await request('job',{id:a.id,headers:{cookie}})).status,403);
+  assert.equal((await request('history-claim',{id:a.id,token:a.token,headers:{cookie},body:{}})).status,200);
+  assert.equal((await request('history-claim',{id:b.id,token:b.token,headers:{cookie},body:{}})).status,403);
+  assert.equal((await request('job',{id:a.id,headers:{cookie}})).status,200);
+  assert.equal((await request('job',{id:b.id,headers:{cookie}})).status,403);
+  assert.equal((await request('job',{id:a.id,headers:{cookie:cookie+'x'}})).status,403);
+  const created=await request('create',{headers:{cookie},body:{files,context}});assert.equal(created.status,201);
+  const list=await request('history',{headers:{cookie}});assert.deepEqual(new Set(list.data.items.map(x=>x.id)),new Set([a.id,created.data.id]));assert.ok(!JSON.stringify(list.data).includes('owner_hash'));
+  assert.equal((await request('history',{headers:{cookie:'purchase_workspace=1000000000000.fake'}})).status,401);
+  assert.equal((await request('workspace-logout',{body:{},headers:{cookie,origin:'https://attacker.example'}})).status,403);
+ }finally{delete process.env.HISTORY_ACCESS_KEY;delete process.env.HISTORY_WORKSPACE_ID;}
+});
+
+test('Supplier endpoint saves independent review and reuses it for safe sharing',async()=>{
+ const j=await create();await request('generate',{id:j.id,token:j.token,body:{}});let calls=0;
+ const output={summary:'供应商资料讨论',products:[{name:'暖包',specification:'待确认',quote:'待确认',retail:'待确认',conditions:'待确认',quoteEvidence:'尚未确认',refs:[{source:0,page:1}],recommendation:'先补资料再评估',reason:'先确认型号',requirements:['提供正式型号'],image:null}]};
+ const mock=http.createServer(async(req,res)=>{calls++;for await(const _ of req){}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(output)}}]}));});await new Promise(r=>mock.listen(0,'127.0.0.1',r));process.env.AI_BASE_URL=`http://127.0.0.1:${mock.address().port}`;process.env.AI_API_KEY='test';process.env.AI_MODEL='mock';
+ try{assert.equal((await request('supplier',{id:j.id,body:{}})).status,403);const made=await request('supplier',{id:j.id,token:j.token,body:{}});assert.equal(made.status,200);assert.equal(made.data.report.supplierReview.version,3);await request('supplier',{id:j.id,token:j.token,body:{}});assert.equal(calls,1);const shared=await request('share',{id:j.id,token:j.token,body:{audience:'supplier'}});const published=await request('shared&token='+shared.data.path.split('#')[1]);assert.equal(published.data.report.supplierReview.products[0].name,'暖包');assert.equal(published.data.report.marketComparison,undefined);assert.equal(published.data.report.assessment,undefined);}finally{process.env.AI_API_KEY='';process.env.AI_MODEL='';await new Promise(r=>mock.close(r));}
+});
