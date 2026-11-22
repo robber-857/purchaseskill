@@ -1,4 +1,4 @@
-import {marketHTML} from './market-report.js';
+import {marketHTML,coverageSummary,marketForReport,evidenceAppendix} from './market-report.js';
 import {rangeSections} from './range-report.js';
 import {scoreAssessment,economicsSummary} from '../lib/assessment.mjs';
 
@@ -116,7 +116,7 @@ function readableBasicReport(r) {
     risks:r.risks.map(x => ({...x,detail:readable(x.detail)})),evidence:r.evidence.map(x => ({...x,limitation:readable(x.limitation)})),
     missing:r.missing.map(readable),nextSteps:r.nextSteps.map(readable),limitations:r.limitations.map(readable)};
 }
-export function reportHTML(report, {interactive = true} = {}) {
+export function reportHTML(report, {interactive = true, marketEditable = false} = {}) {
   if (report.mode === 'supplier') return supplierHTML(report);
   const r = report.mode === 'basic' ? readableBasicReport(report) : report;
   const brief = r.assessment?.brief;
@@ -128,6 +128,7 @@ export function reportHTML(report, {interactive = true} = {}) {
   const base = economics?.scenarios.find(s => s.name === '基准');
   const date = new Date(r.createdAt).toLocaleDateString('zh-CN', {timeZone:'Australia/Sydney'});
   const price = brief?.price;
+  const comparison=marketForReport(r);
   const next = brief?.nextAction || r.nextSteps[0];
   const priorities = brief?.priorities;
   const links = [['priorities','看关键问题'],['price','查报价'],['requirements','看补件清单'],['actions','看推进步骤']];
@@ -137,7 +138,7 @@ export function reportHTML(report, {interactive = true} = {}) {
     <section id="overview" class="decision-banner decision-spread ${decision.tone}">
       <div class="decision-copy"><span class="decision-eyebrow">采购建议</span><h2>${decision.label}</h2><p>${escape(brief?.takeaway || r.summary)}</p></div>
       <div class="decision-action"><h3>现在先做什么</h3><p>${escape(next)}</p><a href="#requirements">查看补件清单 ↓</a></div></section>
-    ${readingLinks(links,'internal-reading-links')}
+    ${readingLinks(links,'internal-reading-links')}${coverageSummary(comparison)}
     <section id="priorities">${heading(priorities?.length ? '最影响采购决定的事' : '需核对的问题')}
       ${priorities?.length ? `<ol class="priority-list">${priorities.map(x => `<li><h3>${escape(x.title)}</h3><p>${escape(x.why)}</p><p class="priority-action"><strong>建议</strong> ${escape(x.action)}</p>${refs(x.refs)}</li>`).join('')}</ol>`
         : r.risks.length ? r.risks.map(x => `<article class="analysis-row"><h3>${escape(x.title)}</h3><p>${escape(x.detail)}</p></article>`).join('') : '<p>尚无已记录的问题，请核对采购需求与资料。</p>'}
@@ -148,12 +149,13 @@ export function reportHTML(report, {interactive = true} = {}) {
       ${brief?.facts?.length ? `<div class="brief-facts">${brief.facts.map(x => `<div><span>${escape(x.label)}</span><strong>${escape(x.value)}</strong><p>${escape(x.meaning)}</p>${refs(x.refs)}</div>`).join('')}</div>` : ''}
       ${base ? `<div class="brief-earnings"><strong>基准情景的组合增量贡献为 ${amount(base.net,economics.currency)}</strong><p>${escape(economics.period)} · 各情景的成本与假设见详细依据。</p></div>` : ''}
     </section>
-    ${range.candidates}${range.highlights}${marketHTML(r.marketComparison)}
+    ${range.candidates}${range.highlights}${marketHTML(comparison,{editable:marketEditable})}
     <section id="portfolio" class="brief-portfolio">${heading(r.purpose === '转售商品' ? '对现有商品的影响' : '对现有方案的影响')}
       <p>${escape(brief?.portfolio || r.assessment?.skuImpact?.summary || '请提供现有清单和使用或销售记录，再判断哪些项目需要调整。')}</p></section>
     ${range.actions}
     <details id="evidence" class="report-appendix"><summary><span>查看详细依据</span><small>${r.evidence.length} 条证据 · 评分、风险与测算 · 展开后可随正文打印</small></summary>
       ${detailedReportHTML(r,{interactive})}</details>
+    ${evidenceAppendix(comparison)}
     <footer><span>选品有据 · 内部采购评审</span><span>对外沟通请使用供应商反馈版。</span></footer>
   </article>`;
 }

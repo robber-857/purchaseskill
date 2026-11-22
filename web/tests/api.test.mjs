@@ -94,10 +94,16 @@ test('buyer OCR evidence persists privately and never reaches supplier shares',a
   const mock=http.createServer(async(req,res)=>{for await(const _ of req){}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(fake)}}]}));});await new Promise(r=>mock.listen(0,'127.0.0.1',r));
   process.env.AI_API_KEY='test';process.env.AI_MODEL='test';process.env.AI_BASE_URL=`http://127.0.0.1:${mock.address().port}`;
   try{
-    const screenshot={sourceURL:'https://detail.1688.com/offer/123.html',title:'PRIVATE-OCR-CUP',image:'data:image/png;base64,aGVsbG8='};
+    const screenshot={sourceURL:'https://detail.1688.com/offer/123.html',title:'PRIVATE-OCR-CUP',image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6t8AAAAASUVORK5CYII='};
     assert.equal((await request('market',{id:j.id,body:{screenshot}})).status,403);
     const result=await request('market',{...auth,body:{screenshot}});assert.equal(result.status,200);
     assert.equal(result.data.report.marketComparison.items[0].ocr.buyerProvided,true);
+    const evidence=result.data.report.marketComparison.items[0].priceEvidence.id;
+    const endpoint=base+'?action=market-evidence&id='+j.id+'&evidence='+evidence;
+    assert.equal((await fetch(endpoint)).status,403);
+    const image=await fetch(endpoint,{headers:{Authorization:'Bearer '+j.token}});
+    assert.equal(image.headers.get('content-type'),'image/png');
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()),Buffer.from(screenshot.image.split(',')[1],'base64'));
     assert.equal((await request('job',auth)).data.report.marketComparison.items[0].ocr.offers[0].priceText,'￥19.90');
     const share=await request('share',{...auth,body:{audience:'supplier'}});
     const read=await request('shared&token='+share.data.path.split('#')[1]);assert.doesNotMatch(JSON.stringify(read.data),/PRIVATE-OCR|screenshotData|aGVsbG8/);

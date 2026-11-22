@@ -2,6 +2,8 @@ import {readHistory,remember,saveSnapshot,getSnapshot} from './history.js';
 import {durableFile} from './file-copy.js';
 import {fileMessage,serviceMessage,responseData} from './user-messages.js';
 import {marketEditor} from './market-report.js';
+import {marketProducts} from '../lib/market.mjs';
+import {viewEvidence,withEmbeddedEvidence,printReport} from './price-evidence.js';
 import {DEMOS,demoCSV,demoSupplier,demoSelection} from './demo-data.js';
 import './style.css';
 import './report-workspace.css';
@@ -151,22 +153,27 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
   const displayed=audience==='supplier'?supplierSnapshot(r):r;const supplier=displayed.mode==='supplier';
   if(!shared&&!sample&&job?.id){remember({id:job.id,token:job.token,status:'completed',createdAt:r.createdAt,title:r.files?.filter(f=>f.role!=='internal').map(f=>f.name).join('、')||'采购报告',error:null});saveSnapshot({id:job.id,report:r}).catch(()=>notify('报告已生成，当前浏览器未能保存离线副本。'));}report=r;
   const readerBrand=`<div class="reader-brand"><span class="brandmark" aria-hidden="true">选</span><strong>选品有据</strong><span>${supplier?'供应商反馈':'内部评审'}</span></div>`;
-  shell(`<div class="report-toolbar">${shared?readerBrand:`<div class="audience-tabs" role="group" aria-label="报告受众"><button data-audience="internal" class="${!supplier?'active':''}" aria-pressed="${!supplier}">内部评审</button><button data-audience="supplier" class="${supplier?'active':''}" aria-pressed="${supplier}">供应商反馈</button></div>`}<div><button id="export" class="secondary">下载 HTML</button><button id="print" class="secondary">保存 PDF</button>${!shared?'<button id="share" class="primary">分享报告 ↗</button>':''}</div></div><main class="report-wrap" id="report-top">${sample?`<div class="sample-notice">案例报告依据 Warmies 品牌册整理。${shared?'':'<a href="/">上传自己的文件 →</a>'}</div>`:''}${shared?'<div class="sample-notice">分享版仅展示报告内容。如需原始附件，请联系分享人。</div>':''}${reportHTML(displayed,{interactive:!shared})}${!shared&&!sample&&!supplier?marketEditor(r.marketComparison):''}</main>${shared?'':`<section id="share-dialog" class="flow-panel share-panel" aria-label="分享报告" hidden><div class="panel-toolbar"><button class="close" id="share-close" aria-label="关闭">← 返回报告</button></div><div class="eyebrow">分享这份报告</div><h2>选择给对方看的内容</h2><p>内部报告含采购判断、经营数据（如有）和文件名称。与供应商沟通时，请选择供应商反馈。</p><label><input type="radio" name="audience" value="review"> 内部完整报告（含内部评估，请确认接收人）</label><label><input type="radio" name="audience" value="supplier" checked> 供应商反馈（拟供产品、待确认资料与后续安排）</label><button id="create-share" class="primary">${sample?'复制案例链接':'创建分享链接'}</button><p id="share-status" role="status"></p><input id="share-link" readonly hidden aria-label="分享链接">${!sample?'<button id="revoke" class="text-button">撤销已有分享</button>':''}</section>`}`,{reportView:true,supplier,shared});
+  shell(`<div class="report-toolbar">${shared?readerBrand:`<div class="audience-tabs" role="group" aria-label="报告受众"><button data-audience="internal" class="${!supplier?'active':''}" aria-pressed="${!supplier}">内部评审</button><button data-audience="supplier" class="${supplier?'active':''}" aria-pressed="${supplier}">供应商反馈</button></div>`}<div><button id="export" class="secondary">下载 HTML</button><button id="print" class="secondary">保存 PDF</button>${!shared?'<button id="share" class="primary">分享报告 ↗</button>':''}</div></div><main class="report-wrap" id="report-top">${sample?`<div class="sample-notice">案例报告依据 Warmies 品牌册整理。${shared?'':'<a href="/">上传自己的文件 →</a>'}</div>`:''}${shared?'<div class="sample-notice">分享版仅展示报告内容。如需原始附件，请联系分享人。</div>':''}${reportHTML(displayed,{interactive:!shared,marketEditable:!shared&&!sample&&!supplier})}${!shared&&!sample&&!supplier?marketEditor(r.marketComparison,marketProducts(r,r.files||[])):''}</main>${shared?'':`<section id="share-dialog" class="flow-panel share-panel" aria-label="分享报告" hidden><div class="panel-toolbar"><button class="close" id="share-close" aria-label="关闭">← 返回报告</button></div><div class="eyebrow">分享这份报告</div><h2>选择给对方看的内容</h2><p>内部报告含采购判断、经营数据（如有）和文件名称。与供应商沟通时，请选择供应商反馈。</p><label><input type="radio" name="audience" value="review"> 内部完整报告（含内部评估，请确认接收人）</label><label><input type="radio" name="audience" value="supplier" checked> 供应商反馈（拟供产品、待确认资料与后续安排）</label><button id="create-share" class="primary">${sample?'复制案例链接':'创建分享链接'}</button><p id="share-status" role="status"></p><input id="share-link" readonly hidden aria-label="分享链接">${!sample?'<button id="revoke" class="text-button">撤销已有分享</button>':''}</section>`}`,{reportView:true,supplier,shared});
   const saveMarket=async(body)=>{
-    const status=document.querySelector('#market-status');status.textContent=body.keyword?'正在检索并读取价格，请稍候…':body.screenshot?'正在识别截图价格，请稍候…':'正在保存报价…';
-    const controls=[...document.querySelectorAll('.market-editor button')];controls.forEach(b=>b.disabled=true);
-    try{const result=await api('market',{body});showReport(result.report,{shared,sample,audience});document.querySelector('#market-status').textContent=body.keyword?'检索已结束，结果和限制见上方对照表。':'已保存，内部对比表已更新。';}
-    catch(err){status.textContent=err.message;}finally{controls.forEach(b=>b.disabled=false);}
+    const refresh=Boolean(body.keyword||body.product)&&!body.sourceUrls&&!body.screenshot;
+    const status=document.querySelector('#market-status');status.textContent=refresh?'正在检索并读取价格，请稍候…':body.screenshot?'正在识别截图价格，请稍候…':'正在保存报价…';
+    const controls=[...document.querySelectorAll('.market-editor button,[data-refresh-product]')];controls.forEach(b=>b.disabled=true);
+    const originalButton=controls.find(b=>b.dataset.refreshProduct===body.product);
+    if(refresh&&originalButton)originalButton.textContent='正在检索…';
+    try{const result=await api('market',{body});showReport(result.report,{shared,sample,audience});if(refresh&&body.product){const updated=Array.from(document.querySelectorAll('[data-refresh-product]')).find(b=>b.dataset.refreshProduct===body.product);updated?.closest('.market-sku')?.scrollIntoView({block:'start'});}
+      document.querySelector('#market-status').textContent=refresh?'检索已结束，结果和限制见上方对照表。':'已保存，内部对比表已更新。';}
+    catch(err){status.textContent=err.message;notify(err.message);}finally{controls.forEach(b=>b.disabled=false);if(originalButton?.isConnected)originalButton.textContent='更新这一款';}
   };
+  document.querySelectorAll('[data-refresh-product]').forEach(b=>b.onclick=()=>saveMarket({product:b.dataset.refreshProduct}));
   for(const kind of ['search','baseline','offer','sources','screenshot'])document.querySelector('#market-'+kind)?.addEventListener('submit',async event=>{
     event.preventDefault();const form=event.currentTarget,data=Object.fromEntries(new FormData(form));
     if(kind==='screenshot'){
       const status=document.querySelector('#market-status'),file=form.elements.image.files[0];
       if(!file)return;const button=form.querySelector('button');button.disabled=true;
-      try{if(!/\.(png|jpe?g|webp)$/i.test(file.name))throw new Error('请选择PNG、JPEG或WebP截图');validateFiles([file],config.maxFileMB,config.maxTotalMB);const {extractFiles}=await import('./extract.js');const parsed=await extractFiles([file],1,()=>{});const image=parsed.pages[0]?.images[0];if(!image)throw new Error('未能读取截图');return await saveMarket({screenshot:{sourceURL:data.sourceURL,title:data.title,image}});}catch(err){status.textContent=fileMessage(err);}finally{button.disabled=false;}return;
+      try{if(!/\.(png|jpe?g|webp)$/i.test(file.name))throw new Error('请选择PNG、JPEG或WebP截图');validateFiles([file],config.maxFileMB,config.maxTotalMB);const {extractFiles}=await import('./extract.js');const parsed=await extractFiles([file],1,()=>{});const image=parsed.pages[0]?.images[0];if(!image)throw new Error('未能读取截图');return await saveMarket({product:data.product,screenshot:{sourceURL:data.sourceURL,title:data.title,image}});}catch(err){status.textContent=fileMessage(err);}finally{button.disabled=false;}return;
     }
-    if(kind==='sources')return saveMarket({sourceUrls:data.sourceUrls.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)});
-    if(kind==='search')return saveMarket({keyword:data.keyword});
+    if(kind==='sources')return saveMarket({product:data.product,sourceUrls:data.sourceUrls.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)});
+    if(kind==='search')return saveMarket({product:data.product,...(data.keyword?.trim()?{keyword:data.keyword.trim()}:{})});
     for(const key of ['price','quantity','moq'])if(key in data)data[key]=Number(data[key]);
     data.taxShippingIncluded=form.elements.taxShippingIncluded.checked;
     if(kind==='baseline')return saveMarket({baseline:data});
@@ -183,7 +190,20 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
     if(location.pathname==='/example/warmies')history.replaceState(history.state,'',a.hash);
     revealSection(target);
   });
-  document.querySelector('#export').onclick=()=>downloadReport(displayed,css);document.querySelector('#print').onclick=()=>window.print();
+  const proofContext={id:job?.id,token:job?.token,share:shared&&location.pathname==='/share'?location.hash.slice(1):null};
+  document.querySelectorAll('[data-price-proof]').forEach(button=>button.onclick=async()=>{
+    try{await viewEvidence(button.dataset.priceProof,proofContext);}catch(err){notify(err.message);}
+  });
+  document.querySelector('#export').onclick=async event=>{
+    const button=event.currentTarget;button.disabled=true;
+    try{downloadReport(await withEmbeddedEvidence(displayed,proofContext),css);}catch(err){notify(err.message);}
+    finally{button.disabled=false;}
+  };
+  document.querySelector('#print').onclick=async event=>{
+    const button=event.currentTarget;button.disabled=true;
+    try{await printReport(displayed,proofContext);}catch(err){notify(err.message);}
+    finally{button.disabled=false;}
+  };
   document.querySelectorAll('button.citation').forEach(b=>b.onclick=()=>{
     if(sample){const p=+b.dataset.page;if([1,4,22,30].includes(p)){document.querySelector('#source-content').innerHTML=`<div class="eyebrow">Warmies 原始品牌册</div><h2>第 ${p} 页</h2><img class="source-image" src="/demo-assets/page-${p}.jpg" alt="品牌册第 ${p} 页"><p>页面中的陈述属于供应商资料，并未独立验证。</p>`;openPanel('source-dialog');}else notify('此页未包含在公开案例预览中。');}
     else {const p=manifest?.pages.find(p=>p.file===+b.dataset.source&&p.page===+b.dataset.page);if(p)openSource(p);else notify('原文件未公开；如需逐页预览，请回到上传本文件的原会话。');}
@@ -299,12 +319,17 @@ async function historyPage(){
   const load=async()=>{status.textContent='正在读取历史报告…';try{let offset=0,items=[];do{const r=await fetch('/api/index?action=history&offset='+offset);
     if(r.status===401){login();status.textContent='';return;}
     const data=await responseData(r,'history');
-    items.push(...data.items);offset=data.nextOffset;}while(offset!==null);if(!content.isConnected)return;config.workspaceSignedIn=true;cloudHistory=items;content.innerHTML=`<div class="actions"><button id="refresh-history" class="secondary">刷新报告列表</button><button id="workspace-logout" class="secondary">退出工作区</button></div><div id="history-list">${items.map(x=>`<article class="history-card"><h2>${e(x.title||'采购报告')}</h2><p>${e(new Date(x.createdAt).toLocaleString('zh-CN'))} · ${e(({completed:'已完成',failed:'未完成',uploading:'待上传',analyzing:'分析中'})[x.status]||'状态待确认')}</p>${x.error?`<p class="error">${e(serviceMessage('generate',x.error))}</p>`:''}<button class="secondary" data-history-id="${e(x.id)}">${x.status==='completed'?'打开报告':'查看任务'}</button></article>`).join('')||'<p>这个工作区还没有报告。新建评审后可在这里查看。</p>'}</div>`;document.querySelectorAll('[data-history-id]').forEach(b=>b.onclick=()=>openHistory(b.dataset.historyId));document.querySelector('#refresh-history').onclick=load;document.querySelector('#workspace-logout').onclick=async()=>{try{await api('workspace-logout',{body:{},id:null,token:null});job=null;report=null;cloudHistory=[];config.workspaceSignedIn=false;login();status.textContent='已退出工作区';}catch(err){status.textContent=err.message;}};status.textContent=`已同步 ${items.length} 条评审记录`;}catch(err){if(status.isConnected)status.textContent=err instanceof TypeError?serviceMessage('history'):err.message;}};
+    items.push(...data.items);offset=data.nextOffset;}while(offset!==null);if(!content.isConnected)return;config.workspaceSignedIn=true;cloudHistory=items;content.innerHTML=`<div class="actions"><button id="refresh-history" class="secondary">刷新报告列表</button><button id="workspace-logout" class="secondary">退出工作区</button></div><div id="history-list">${items.map(x=>`<article class="history-card"><h2>${e(x.title||'采购报告')}</h2><p>${e(new Date(x.createdAt).toLocaleString('zh-CN'))} · ${e(({completed:'已完成',failed:'未完成',uploading:'待上传',analyzing:'分析中'})[x.status]||'状态待确认')}</p>${x.error?`<p class="error">${e(serviceMessage('generate',x.error))}</p>`:''}<button class="secondary" data-history-id="${e(x.id)}">${x.status==='completed'?'打开报告':'查看任务'}</button></article>`).join('')||'<p>这个工作区还没有报告。新建评审后可在这里查看。</p>'}</div>`;document.querySelectorAll('[data-history-id]').forEach(b=>b.onclick=()=>openHistory(b.dataset.historyId));document.querySelector('#refresh-history').onclick=load;document.querySelector('#workspace-logout').onclick=async()=>{try{await api('workspace-logout',{body:{},id:null,token:null});job=null;report=null;cloudHistory=[];config.workspaceSignedIn=false;login();status.textContent='已退出工作区';}catch(err){status.textContent=err.message;}};status.textContent=`已同步 ${items.length} 条评审记录`;
+    const requested=new URLSearchParams(location.search).get('report');
+    if(requested&&items.some(item=>item.status==='completed'&&item.id===requested))await openHistory(requested);
+  }catch(err){if(status.isConnected)status.textContent=err instanceof TypeError?serviceMessage('history'):err.message;}};
   if(config.workspaceReady===false){content.innerHTML='<p>当前站点尚未开放工作区历史。你可以回到供应商资料页，在原浏览器恢复上次评审。</p>';return;}
   await load();
 }
 async function openHistory(id){
-  const status=document.querySelector('#history-status');status.textContent='正在打开报告…';try{const result=await api('job',{id,token:null});if(!result.report){status.textContent=result.status==='analyzing'?'此任务仍在分析，请稍后刷新报告列表。':'此任务尚无完成报告，请返回工作台重新选择资料生成。';return;}job={id};sourceFiles=[];manifest=null;showReport(result.report);window.scrollTo(0,0);}catch(err){status.textContent=err.message;}
+  const status=document.querySelector('#history-status');status.textContent='正在打开报告…';try{const result=await api('job',{id,token:null});if(!result.report){status.textContent=result.status==='analyzing'?'此任务仍在分析，请稍后刷新报告列表。':'此任务尚无完成报告，请返回工作台重新选择资料生成。';return;}job={id};sourceFiles=[];manifest=null;showReport(result.report);
+    const section=location.hash==='#market-comparison'?document.getElementById('market-comparison'):null;
+    if(section)revealSection(section);else window.scrollTo(0,0);}catch(err){status.textContent=err.message;}
 }
 
 function navigate(path){if(busy){notify('正在处理资料，请完成后再切换页面。');return;}history.pushState({},'',path);if(!workspaceLoaded){boot();return;}path==='/history'?historyPage():path==='/internal-data'?internalPage():home();window.scrollTo(0,0);}

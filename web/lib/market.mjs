@@ -1,4 +1,6 @@
 import {z} from 'zod';
+import {productPlan,productSimilarity} from './market-products.mjs';
+export {marketProducts} from './market-products.mjs';
 
 export const PLATFORMS = [
   {id:'1688',name:'1688',domain:'1688.com',kind:'批发线索'},
@@ -8,9 +10,9 @@ export function safeMarketURL(value,domain){
   try {const u=new URL(value);const host=u.hostname;for(const key of [...u.searchParams.keys()])if(/^(utm_|srsltid$|spm$|ad_od$)/.test(key))u.searchParams.delete(key);u.hash='';return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&host.includes('.')&&!/^[\d.]+$|[:\[\]]|(?:^|\.)(?:localhost|local|internal)$/.test(host)&&(!domain||host===domain||host.endsWith('.'+domain))?u.href:null;}catch{return null;}
 }
 export function isChinaMarketURL(url){return PLATFORMS.some(p=>Boolean(safeMarketURL(url,p.domain)));}
-export function isSingleProductURL(url){try{return isChinaMarketURL(url)&&marketPageType(url)==='product';}catch{return false;}}
+export function isSingleProductURL(url){try{return isChinaMarketURL(url)&&/^(?:taobao|1688)\//.test(productPageKey(url));}catch{return false;}}
 export function singlePrice(values=[]){const prices=[...new Set(values.map(x=>String(x).trim()).filter(x=>/^(?:CNY|[¥￥])\s*\d[\d,]*(?:\.\d{1,2})?$|^\d[\d,]*(?:\.\d{1,2})?\s*元$/.test(x)))];return prices.length&&new Set(prices.map(p=>Number(p.replace(/[^0-9.]/g,'')))).size===1?prices[0]:null;}
-export function marketRank(item){return (item.verification?.price?100:0)+(item.ocr?.offers?.length?70:0)+(item.priceMentions?.length?40:0)+(item.pageType==='product'?10:0)+(item.imageUrl?5:0);}
+export function marketRank(item){return (item.similarity?.score || 0)*10+(item.verification?.price?100:0)+(item.ocr?.offers?.length?70:0)+(item.priceMentions?.length?40:0)+(item.pageType==='product'?10:0)+(item.imageUrl?5:0);}
 // Only use images explicitly identified by a source page, never guessed URLs or AI imagery.
 export function marketImageURL(value){
   if(typeof value!=='string'||value.length>2000)return null;
@@ -24,12 +26,19 @@ export function marketImageURL(value){
 }
 function productPageKey(url){
   const page=new URL(url);
-  const sku=page.searchParams.get('skuId')||page.searchParams.get('sku_id')||'';
-  const offer=page.hostname==='detail.1688.com'&&page.pathname.match(/^\/offer\/(\d+)\.html\/?$/);
+  const variants=[...page.searchParams.getAll('skuId'),...page.searchParams.getAll('sku_id')];
+  if(variants.length>1 || (variants.length&&!/^\d+$/.test(variants[0])))return url;
+  const sku=variants[0]||'';
+  const offer=/^(?:detail\.1688|m\.1688)\.com$/.test(page.hostname)&&page.pathname.match(/^\/offer\/(\d+)\.html\/?$/);
   if(offer)return '1688/'+offer[1]+'/'+sku;
-  const id=(/^(item|detail)\.taobao\.com$/.test(page.hostname)&&page.pathname==='/item.htm'&&page.searchParams.get('id'))
+  const ids=page.searchParams.getAll('id');
+  const numericRoute=(/^(?:item|detail)\.taobao\.com$/.test(page.hostname)&&page.pathname==='/item.htm')||
+    (page.hostname==='h5.m.taobao.com'&&page.pathname==='/awp/core/detail.htm');
+  const id=(numericRoute&&ids.length===1&&ids[0])
     ||(page.hostname==='www.taobao.com'&&page.pathname.match(/^\/list\/item\/(\d+)\.htm(?:l)?\/?$/)?.[1]);
   if(id&&/^\d+$/.test(id))return 'taobao/'+id+'/'+sku;
+  const opaque=page.hostname==='www.taobao.com'&&page.pathname.match(/^\/list\/item\/([A-Za-z0-9_-]{1,200}(?:(?:=|%3[Dd]){1,2})?)\.html?\/?$/);
+  if(opaque&&opaque[1].length>=8)return 'taobao/opaque/'+page.pathname+'/'+sku;
   return url;
 }
 function structuredProductImages(html,sourceURL,title){
@@ -82,7 +91,7 @@ function addCoverImages(item,urls,origin,sourceURL){
 }
 export function chinaMarketComparison(m){
   if(!m)return m;
-  return {...m,items:(m.items||[]).filter(i=>isSingleProductURL(i.url)&&!['redirected','listing'].includes(i.verification?.status)&&(!i.verification?.currency||i.verification.currency==='CNY')),offers:(m.offers||[]).filter(o=>isChinaMarketURL(o.url)&&o.currency==='CNY'),baseline:m.baseline?.currency==='CNY'?m.baseline:null,searches:(m.searches||[]).filter(s=>PLATFORMS.some(p=>p.name===s.platform)),note:'仅检索1688和淘宝公开内容，不登录。保留商品链接、价格原文及获取时间；仅展示单品链接；每个商品只展示一个有依据的价格，无法确定规格或价格时不猜测。'};
+  return {...m,items:(m.items||[]).filter(i=>!i.discoveryOnly&&isSingleProductURL(i.url)&&!['redirected','listing','unavailable'].includes(i.verification?.status)&&(!i.verification?.currency||i.verification.currency==='CNY')),offers:(m.offers||[]).filter(o=>isChinaMarketURL(o.url)&&o.currency==='CNY'),baseline:m.baseline?.currency==='CNY'?m.baseline:null,searches:(m.searches||[]).filter(s=>PLATFORMS.some(p=>p.name===s.platform)),note:'仅检索1688和淘宝公开内容，不登录。保留商品链接、价格原文及获取时间；仅展示单品链接；每个商品只展示一个有依据的价格，无法确定规格或价格时不猜测。'};
 }
 const text=z.string().trim().max(300);
 const positive=z.number().finite().positive().max(1e9);
@@ -93,6 +102,7 @@ export const OfferSchema=z.object({
   delivery:text,afterSales:text,conditions:text,observedAt:z.string().date(),
 }).superRefine((o,ctx)=>{const p=PLATFORMS.find(p=>p.name===o.platform);if(!safeMarketURL(o.url,p.domain)||!isSingleProductURL(o.url))ctx.addIssue({code:'custom',message:'请提供对应平台的 HTTPS 商品链接',path:['url']});});
 export const MarketInputSchema=z.object({
+  product:z.string().trim().min(1).max(160).optional(),
   screenshot:z.object({sourceURL:z.string().max(2000).refine(x=>isSingleProductURL(x),'请填写1688或淘宝单品详情链接，不接受搜索或聚合页'),title:z.string().trim().min(1).max(300),image:z.string().max(550000).regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/)}).optional(),
   sourceUrls:z.array(z.string().max(2000).refine(x=>isSingleProductURL(x),'请填写单品详情链接，不接受搜索或聚合页').transform(x=>safeMarketURL(x))).min(1).max(4).optional(),
   keyword:z.string().trim().min(1).max(100).optional(),
@@ -124,16 +134,17 @@ export function compareOffers(offers=[],baseline){
 export function searchLinks(keyword){return PLATFORMS.map(p=>({...p,url:'https://www.bing.com/search?q='+encodeURIComponent(`site:${p.domain} ${keyword} 价格`)}));}
 export function marketPageType(url){
   const u=new URL(url);
+  if(isSingleProductURL(url))return 'product';
   if(/^\/products\/[^/]+\/?$|^\/product-page\/[^/]+\/?$/.test(u.pathname))return 'product';
   if(/^(item|detail)\.taobao\.com$/.test(u.hostname)&&u.pathname==='/item.htm'&&/^\d+$/.test(u.searchParams.get('id')||''))return 'product';
   return /\/offer\/|\/list\/item\/|\/product\/\d+|\/\d+\.html/.test(u.pathname)&&/^(detail\.1688|item(?:\.m)?\.jd|www\.taobao)\.com$/.test(u.hostname)?'product':'listing';
 }
 export function inspectMarketPage(item,data){
   const markdown=String(data?.markdown||'');
-  const finalURL=data?.metadata?.url||item.url;
+  const finalURL=data?.metadata?.url||data?.metadata?.sourceURL||item.url;
   if(data?.metadata?.statusCode>=400)return {status:'unavailable',note:'来源页面返回错误，价格未核实'};
   if(/captcha|slider to verify|滑块验证|登录查看价格|登录后可查看商品到手价|密码登录短信登录|下载APP前往抢购/i.test(markdown)||/login\.|\/download(?:\?|$)/.test(finalURL))return {status:'blocked',note:'来源要求登录、验证码或 App，未核实商品价格'};
-  if(new URL(finalURL).origin!==new URL(item.url).origin||new URL(finalURL).pathname!==new URL(item.url).pathname||['id','itemId'].some(k=>new URL(item.url).searchParams.has(k)&&new URL(item.url).searchParams.get(k)!==new URL(finalURL).searchParams.get(k)))return {status:'redirected',note:'来源跳转到其他页面，不能确认该商品价格'};
+  if(isSingleProductURL(item.url) ? !isSingleProductURL(finalURL)||productPageKey(finalURL)!==productPageKey(item.url) : new URL(finalURL).origin!==new URL(item.url).origin||new URL(finalURL).pathname!==new URL(item.url).pathname||['id','itemId'].some(k=>new URL(item.url).searchParams.has(k)&&new URL(item.url).searchParams.get(k)!==new URL(finalURL).searchParams.get(k)))return {status:'redirected',note:'来源跳转到其他页面或规格，不能确认该商品价格'};
   if(item.pageType!=='product')return {status:'listing',note:'聚合页含多个商品，不能将金额作为单个商品报价'};
   const metadata=data.metadata||{};
   const amount=Number(metadata['product:price:amount']||metadata['og:price:amount']);
@@ -156,38 +167,133 @@ export function inspectMarketPage(item,data){
   if(title.length>=4&&compact(markdown).includes(title)&&price)return {status:'page_observed',note:'商品页可见标题与索引金额；具体 SKU、优惠资格及结算价仍需核对',price,excerpt:markdown.slice(Math.max(0,markdown.indexOf(price)-120),markdown.indexOf(price)+200)};
   return {status:'unconfirmed',note:'未在原页面同时确认商品标题和索引金额'};
 }
-export async function verifyMarketSources(result,{key=process.env.FIRECRAWL_API_KEY,fetcher=fetch,visionReader}={}){
+function pagePrice(item){
+  if (['blocked','redirected','unavailable','failed','listing'].includes(item.verification?.status)||item.ocr?.status==='blocked') return null;
+  if (item.verification?.status==='page_observed'&&(!item.verification.currency||item.verification.currency==='CNY')) return singlePrice([item.verification.price]);
+  const offers=item.ocr?.status==='read'?item.ocr.offers.filter(o=>o.matchesCandidate):[];
+  return offers.length===1?singlePrice([offers[0].priceText]):null;
+}
+function updateCoverage(result){
+  if(!result.searches)return result;
+  for(const search of result.searches){
+    if(!('directCount' in search))continue;
+    const group=result.items.filter(i=>i.product===search.product && i.platform===search.platform);
+    const retained=group.filter(i=>!i.discoveryOnly&&!['redirected','listing','unavailable'].includes(i.verification?.status)&&(!i.verification?.currency||i.verification.currency==='CNY'));
+    search.matchedCount=retained.length;
+    search.readableCount=retained.filter(i=>i.verification?.readable).length;
+    search.verifiedPriceCount=retained.filter(i=>i.verification?.readable&&pagePrice(i)).length;
+    search.blockedCount=group.filter(i=>i.verification?.status==='blocked'||i.ocr?.status==='blocked').length;
+    search.redirectedCount=group.filter(i=>i.verification?.status==='redirected').length;
+    search.uncheckedCount=group.filter(i=>!i.verification||i.verification.status==='not_checked').length;
+    if(search.status==='failed'||search.status==='not_configured')continue;
+    if(search.status==='partial'){
+      search.reason=search.error==='检索服务限流'?'部分检索已完成，搜索服务限流，尚未完整核对': '部分检索已完成，其余检索暂未成功';
+      continue;
+    }
+    search.status=retained.length?'found':'empty';
+    if(!retained.length&&search.error)search.reason='部分检索未完成，暂未取得匹配的商品链接';
+    else if(!retained.length&&search.blockedCount)search.reason='发现单品链接，原页要求登录或验证，未能核实是否匹配本款';
+    else if(!retained.length&&search.redirectedCount)search.reason='发现单品链接，原页跳转到其他商品或规格，未取得可核对的候选';
+    else if(!retained.length)search.reason=search.directCount?'检索到单品链接，但未取得匹配本款的有效候选':'本次检索未返回可识别的单品详情链接';
+    else if(search.blockedCount===retained.length)search.reason='单品链接已找到，打开原页需要登录或验证';
+    else if(search.readableCount&&!search.verifiedPriceCount)search.reason='已打开匹配的商品页，尚未从原页确认对应规格价格';
+    else if(search.verifiedPriceCount)search.reason='已读取匹配商品的原页价格，采购规格及税运仍需核对';
+    else search.reason='已找到详情链接，原页商品或标价仍待核对';
+  }
+  return result;
+}
+async function untilDeadline(stopAt,callback){
+  const remaining=stopAt-Date.now();
+  if(remaining<=0)throw new DOMException('核验达到等待时限','TimeoutError');
+  const controller=new AbortController();
+  let timer;
+  const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{
+    const error=new DOMException('核验达到等待时限','TimeoutError');
+    controller.abort(error);reject(error);
+  },remaining);});
+  try{return await Promise.race([callback(controller.signal),timeout]);}finally{clearTimeout(timer);}
+}
+export async function verifyMarketSources(result,{key=process.env.FIRECRAWL_API_KEY,fetcher=fetch,visionReader,saveEvidence,deadline=Infinity}={}){
   if(!key)return result;
-  const groups=Object.groupBy(result.items.filter(i=>isSingleProductURL(i.url)),i=>i.product);
+  const stopAt=Math.min(deadline,Date.now()+95000);
+  const groups=Object.groupBy(result.items.filter(i=>isSingleProductURL(i.url)),i=>JSON.stringify([i.product,i.platform]));
   const grouped=Object.values(groups).map(items=>[...items].sort((a,b)=>marketRank(b)-marketRank(a)).slice(0,5));
   // Round-robin caps avoid giving every screenshot to the first product.
-  const targets=[0,1,2,3,4].flatMap(index=>grouped.map(xs=>xs[index]).filter(Boolean)).slice(0,9);
-  const screenshotTargets=new Set(targets.slice(0,3));
-  await Promise.all(targets.map(async item=>{
+  const targets=[0,1,2,3,4].flatMap(index=>grouped.map(xs=>xs[index]).filter(Boolean)).slice(0,Math.max(9,grouped.length));
+  const screenshotTargets=new Set(saveEvidence?targets:targets.slice(0,3));
+  const ocrTargets=new Set(targets.slice(0, result.products?.length ? Math.min(12, Math.max(3,result.products.length*2)) : 3));
+  await pooled(targets,6,async item=>{
     try{
+      const remaining=stopAt-Date.now();
+      if(remaining<300){
+        item.verification={status:'not_checked',readable:false,note:'本轮核验达到等待时限，稍后可按款更新'};
+        return;
+      }
       const formats=['markdown'];
       if(!marketCoverURLs(item).length)formats.push('rawHtml');
       if(screenshotTargets.has(item))formats.push({type:'screenshot',fullPage:true,viewport:{width:1440,height:1000}});
-      const response=await fetcher('https://api.firecrawl.dev/v2/scrape',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({url:item.url,formats,onlyMainContent:true,maxAge:0,timeout:20000}),signal:AbortSignal.timeout(25000)});
+      const response=await fetcher('https://api.firecrawl.dev/v2/scrape',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({url:item.url,formats,onlyMainContent:true,maxAge:0,timeout:Math.min(20000,remaining)}),signal:AbortSignal.timeout(Math.min(25000,remaining))});
       if(!response.ok)throw new Error(`来源核验服务 HTTP ${response.status}`);
       const data=await response.json();if(!data.success||!data.data)throw new Error();
-      item.verification={...inspectMarketPage(item,data.data),checkedAt:new Date().toISOString()};
+      const page=data.data, metadata=page.metadata||{}, finalURL=metadata.url||metadata.sourceURL;
+      item.verification={...inspectMarketPage(item,page),checkedAt:new Date().toISOString()};
+      const finalProduct=Boolean(finalURL&&isSingleProductURL(finalURL)&&productPageKey(finalURL)===productPageKey(item.url));
+      const sourceTitle=metadata.ogTitle||metadata['og:title']||page.markdown?.match(/^#\s+(.+)/m)?.[1]||metadata.title||'';
+      const plan=result.products?.find(p=>p.name===item.product);
+      const sourceSimilarity=plan && sourceTitle ? productSimilarity(productPlan(plan),sourceTitle) : null;
+      const sourceMatch=Boolean(sourceSimilarity?.score);
+      if(item.discoveryOnly && !(finalProduct&&sourceMatch&&['unconfirmed','page_observed'].includes(item.verification.status)))return;
+      if(plan && !item.discoveryOnly && finalProduct && !sourceMatch && sourceTitle &&
+         metadata['og:type']==='product' && ['unconfirmed','page_observed'].includes(item.verification.status)){
+        item.discoveryOnly=true;
+        item.verification={status:'mismatch',readable:false,checkedAt:item.verification.checkedAt,note:'原页识别的商品与本款检索条件不符'};
+        return;
+      }
+      if(item.discoveryOnly){
+        delete item.discoveryOnly;
+        item.title=sourceTitle.slice(0,300);
+        item.similarity=sourceSimilarity;
+        item.match='原页标题匹配：'+sourceSimilarity.matched.join('、');
+      }
+      item.verification.readable=finalProduct && ['page_observed','unconfirmed'].includes(item.verification.status) &&
+        Boolean(item.verification.status==='page_observed'||sourceMatch||(!plan && sourceTitle));
       if(item.pageType==='product'&&!['blocked','redirected','unavailable'].includes(item.verification.status)){
         addCoverImages(item,pageImages(data.data,item.url),'source_page',item.url);
       }
-      if(screenshotTargets.has(item)&&!item.verification.price){
+      if(ocrTargets.has(item)&&!item.verification.price){
         const screenshot=safeMarketURL(data.data.screenshot);
         if(['blocked','redirected','unavailable'].includes(item.verification.status))item.ocr={status:'blocked',offers:[],note:'来源被登录、验证或跳转拦截，OCR不能读取隐藏价格'};
-        else if(screenshot){
+        else if(screenshot&&stopAt>Date.now()){
           const reader=visionReader||(await import('./market-vision.mjs')).readMarketScreenshot;
-          item.ocr={...await reader({screenshot,title:item.title,product:item.product,pageType:item.pageType,referenceImage:marketImageURL(item.imageUrl)}),sourceURL:item.url,screenshotURL:screenshot,checkedAt:new Date().toISOString()};
+          const result=await untilDeadline(stopAt,signal=>reader({screenshot,title:item.title,product:item.product,pageType:item.pageType,referenceImage:marketImageURL(item.imageUrl)},{
+            fetcher:(url,opts)=>fetch(url,{...opts,signal:AbortSignal.any([signal,opts?.signal].filter(Boolean))})
+          })).catch(()=>({status:'failed',offers:[],note:'在等待时限内未能核实截图价格'}));
+          item.ocr={...result,sourceURL:item.url,checkedAt:new Date().toISOString()};
+          if(item.ocr.status==='blocked')item.verification.readable=false;
+          if(finalProduct && item.ocr.status==='read' && item.ocr.offers.some(o=>o.matchesCandidate))item.verification.readable=true;
         }else item.ocr={status:'no_screenshot',offers:[],note:'抓取服务未返回可识别截图'};
       }
       if(item.ocr&&!item.ocr.checkedAt)item.ocr.checkedAt=item.verification.checkedAt;
+      const priceText=pagePrice(item), screenshot=safeMarketURL(page.screenshot);
+      if(saveEvidence && screenshot && finalProduct && item.verification.readable && priceText && stopAt>Date.now()){
+        // Losing the evidence copy must not discard a successfully inspected source page.
+        try{
+          const evidence=await untilDeadline(stopAt,signal=>saveEvidence({sourceURL:item.url,finalURL,screenshot,origin:'source_page',capturedAt:item.verification.checkedAt,priceText,signal}));
+          if(evidence)item.priceEvidence=evidence;
+        }catch{ /* The report retains its text evidence. */ }
+      }
       if(!item.title)item.title=String(data.data.metadata?.['og:title']||data.data.metadata?.title||item.url).slice(0,300);
     }catch(error){item.verification={status:'failed',note:/^来源核验服务 HTTP \d+$/.test(error.message)?error.message:'原页面核验失败或超时，保留为搜索线索',checkedAt:new Date().toISOString()};}
-  }));
-  return result;
+  });
+  if(result.searches){
+    const hidden=result.items.filter(i=>i.discoveryOnly);
+    const regrouped=excludeAmbiguousProducts(result.searches.map(row=>({...row,items:result.items.filter(i=>i.product===row.product&&i.platform===row.platform&&!i.discoveryOnly)})));
+    result.items=[...regrouped.flatMap(row=>row.items),...hidden];
+    updateCoverage(result);
+    result.items=result.items.filter(i=>!i.discoveryOnly);
+    return result;
+  }
+  return updateCoverage(result);
 }
 export async function inspectProductLinks(urls,product,options={}){
   const capturedAt=new Date().toISOString();
@@ -198,50 +304,161 @@ export async function inspectProductLinks(urls,product,options={}){
   })};
   return (await verifyMarketSources(result,options)).items;
 }
-// Search receives only a public product keyword, never the manifest, buyer files or context.
-export async function searchMarket(keywords,{key=process.env.FIRECRAWL_API_KEY,fetcher=fetch}={}){
-  const queries=[...new Set(keywords.map(x=>String(x).trim().slice(0,100)).filter(Boolean))].slice(0,3);
-  const capturedAt=new Date().toISOString();
-  if(!queries.length)return {status:'needs_product',capturedAt,queries,searches:[],items:[],note:'尚未识别供应商产品，请填写公开产品名称后检索。'};
-  if(!key)return {status:'not_configured',capturedAt,queries,searches:[],items:[],note:'自动检索尚未配置。可打开平台限定搜索并补录已核对报价。'};
-  const providers=PLATFORMS;
-  const searches=await Promise.all(queries.flatMap(product=>providers.map(async platform=>{
-    try {
-      const response=await fetcher('https://api.firecrawl.dev/v2/search',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({query:platform.domain?`site:${platform.domain} ${product} 价格`:`${product} price`,sources:['web','images'],limit:10,timeout:15000}),signal:AbortSignal.timeout(20000)});
-      if(!response.ok)throw new Error(`检索服务 HTTP ${response.status}`);
-      const data=await response.json();if(data.success===false||(!Array.isArray(data.data?.web)&&!Array.isArray(data.data?.images)))throw new Error('检索服务返回格式异常');
-      const candidates=new Map();
-      const items=(data.data.web||[]).flatMap(item=>{
-        const url=safeMarketURL(item.url,platform.domain);if(!url||!isSingleProductURL(url))return [];
-        const sourceKey=productPageKey(url);
-        if(candidates.has(sourceKey))return [];
-        const title=String(item.title||'未命名结果').slice(0,300),snippet=String(item.description||'').slice(0,1500);
-        // Preserve raw evidence rather than turning ambiguous promotional prices into offers.
-        const priceMentions=[...new Set((title+' '+snippet).match(/(?:[$¥￥]\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*元)/g)||[])].slice(0,5);
-        const pageType=marketPageType(url);
-        const candidate={product,platform:platform.name,sourceType:'marketplace',kind:platform.kind,title,url,snippet,priceMentions,capturedAt,pageType,match:'商品候选 · 规格未核验'};
-        addCoverImages(candidate,[...pageImages(item,url),item.imageUrl,item.thumbnailUrl],'search_index',url);
-        candidates.set(sourceKey,candidate);
-        return [candidate];
-      });
-      for(const found of data.data.images||[]){
-        const url=safeMarketURL(found.url,platform.domain);
-        const images=[found.imageUrl,found.thumbnailUrl].map(marketImageURL).filter(Boolean);
-        if(!url||!isSingleProductURL(url)||!images.length)continue;
-        const sourceKey=productPageKey(url);
-        const existing=candidates.get(sourceKey);
-        if(existing){
-          addCoverImages(existing,[...marketCoverURLs(existing),...images],'search_index',existing.imageSourceURL||url);
-          continue;
-        }
-        const candidate={product,platform:platform.name,sourceType:'marketplace',kind:platform.kind,title:String(found.title||'商品图片').slice(0,300),url,snippet:'请打开商品页核对规格与价格。',priceMentions:[],capturedAt,pageType:'product',match:'图片搜索结果 · 规格待核对'};
-        addCoverImages(candidate,images,'search_index',url);
-        candidates.set(sourceKey,candidate);
-        items.push(candidate);
+// The search API receives only public terms. Its raw result counts are kept separate from usable matches.
+async function pooled(values,limit,work){
+  const output=new Array(values.length);
+  let next=0;
+  async function worker(){
+    while(next<values.length){
+      const index=next++;
+      output[index]=await work(values[index]);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(limit,values.length)},worker));
+  return output;
+}
+function addSearchResults(data,candidates,direct,plan,platform,capturedAt){
+  function add(hit,imageHit){
+    const url=safeMarketURL(hit.url,platform.domain);
+    if(!url||!isSingleProductURL(url))return;
+    const id=productPageKey(url);
+    direct.add(id);
+    const existing=candidates.get(id);
+    const images=[...pageImages(hit,url),hit.imageUrl,hit.thumbnailUrl];
+    if(existing&&!existing.discoveryOnly){
+      addCoverImages(existing,[...marketCoverURLs(existing),...images],'search_index',existing.imageSourceURL||url);
+      return;
+    }
+    const title=String(hit.title||'').slice(0,300),snippet=String(hit.description||'').slice(0,1500);
+    const similarity=productSimilarity(plan,title);
+    if(!plan.legacy&&!similarity.score)return;
+    if(imageHit&&!images.some(marketImageURL))return;
+    const priceMentions=imageHit?[]:[...new Set((title+' '+snippet).match(/(?:[$¥￥]\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*元)/g)||[])].slice(0,5);
+    const candidate={product:plan.name,platform:platform.name,sourceType:'marketplace',kind:platform.kind,title:title||'商品图片',
+      url,snippet,priceMentions,capturedAt,pageType:'product',match:similarity.matched.length?'标题匹配：'+similarity.matched.join('、'):'规格待核对'};
+    if(!plan.legacy)candidate.similarity=similarity;
+    addCoverImages(candidate,images,'search_index',url);
+    candidates.set(id,candidate);
+  }
+  for(const hit of data.web||[])add(hit,false);
+  for(const hit of data.images||[])add(hit,true);
+}
+function discoverProductLinks(data,candidates,direct,plan,platform,capturedAt){
+  for(const hit of (data.web||[]).slice(0,10)){
+    const cited=String(hit.description||'').match(/https?:\/\/[^\s<>"'()（）【】，。；]+/gi)||[];
+    const links=[...(Array.isArray(hit.links)?hit.links.slice(0,100):[]),...cited];
+    for(const link of links){
+      if(typeof link!=='string')continue;
+      const url=safeMarketURL(link.replace(/&amp;/g,'&'),platform.domain);
+      if(!url||!isSingleProductURL(url))continue;
+      const id=productPageKey(url);
+      direct.add(id);
+      if(candidates.has(id)||candidates.size>=6)continue;
+      // Search pages and third parties provide navigation only. Their text, prices and photos
+      // never become product evidence. Scrape the linked, official detail page before display.
+      candidates.set(id,{product:plan.name,platform:platform.name,kind:platform.kind,sourceType:'linked_detail',
+        discoveryOnly:true,url,title:'',pageType:'product',priceMentions:[],capturedAt});
+    }
+  }
+}
+function excludeAmbiguousProducts(searches){
+  const assignments=Object.groupBy(searches.flatMap(s=>s.items).filter(i=>i.similarity),i=>productPageKey(i.url));
+  const ambiguous=new Set();
+  for(const entries of Object.values(assignments)){
+    if(entries.length<2)continue;
+    for(const item of entries){
+      const rivals=entries.filter(other=>other.product!==item.product);
+      const distinctive=item.similarity.matched.some(term=>rivals.every(other=>
+        !other.product.normalize('NFKC').toLowerCase().includes(term)&&!other.similarity.matched.some(shared=>shared.includes(term))));
+      if(rivals.length&&!distinctive)ambiguous.add(item);
+    }
+  }
+  return searches.map(row=>({...row,items:row.items.filter(item=>!ambiguous.has(item))}));
+}
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+function searchPacer(fetcher,stopAt){
+  let next=0,limitedUntil=0;
+  // Space real provider requests, including parallel SKU probes. A 429 pauses the whole queue.
+  const spacing=fetcher===fetch?350:0;
+  return {
+    async wait(){
+      for(;;){
+        const now=Date.now(),start=Math.max(now,next,limitedUntil);
+        if(start+250>=stopAt)throw new Error(limitedUntil>now?'检索服务限流':'本轮检索达到等待时限');
+        if(start===now){next=now+spacing;return;}
+        await delay(start-now);
       }
-      items.sort((a,b)=>marketRank(b)-marketRank(a));
-      return {product,platform:platform.name,status:items.length?'found':'empty',items:items.slice(0,6)};
-    }catch(error){return {product,platform:platform.name,status:'failed',error:error.name==='TimeoutError'?'检索超时':error.message,items:[]};}
-  })));
-  return {status:searches.every(s=>s.status==='failed')?'failed':searches.some(s=>s.status==='failed')?'partial':'completed',capturedAt,queries,searches:searches.map(({items,...s})=>s),items:searches.flatMap(s=>s.items),note:'公开搜索索引线索，非平台成交价或实时库存；相似性、规格、价格及税运需打开来源复核。登录、验证码或未收录可能导致无结果。'};
+    },
+    limit(response){
+      const raw=response.headers?.get?.('retry-after');
+      const seconds=raw==null?NaN:Number(raw);
+      const retryMs=Number.isFinite(seconds)?seconds*1000:Date.parse(raw)-Date.now();
+      limitedUntil=Math.max(limitedUntil,Date.now()+(Number.isFinite(retryMs)?Math.max(0,retryMs):spacing*4));
+    }
+  };
+}
+async function searchRequest(query,discovery,{key,fetcher,pacer,stopAt}){
+  for(let attempt=0;attempt<2;attempt++){
+    await pacer.wait();
+    const remaining=Math.max(1,stopAt-Date.now());
+    const response=await fetcher('https://api.firecrawl.dev/v2/search',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+      body:JSON.stringify({query,sources:discovery?['web']:['web','images'],limit:discovery?4:10,timeout:Math.min(13500,remaining),...(discovery?{scrapeOptions:{formats:['links']}}:{})}),
+      signal:AbortSignal.timeout(Math.min(15500,remaining))});
+    if(response.status===429){
+      pacer.limit(response);
+      if(attempt===0)continue;
+      throw new Error('检索服务限流');
+    }
+    if(!response.ok)throw new Error('检索服务 HTTP '+response.status);
+    const data=await response.json();
+    if(data.success===false||(!Array.isArray(data.data?.web)&&!Array.isArray(data.data?.images)))throw new Error('检索服务返回格式异常');
+    return data.data;
+  }
+}
+export async function searchMarket(inputs,{key=process.env.FIRECRAWL_API_KEY,fetcher=fetch,deadline=Infinity}={}){
+  const legacy=inputs.every(p=>typeof p==='string');
+  const plans=[...new Map(inputs.map(productPlan).filter(p=>p.name).map(p=>[p.name,p])).values()].slice(0,legacy?3:12);
+  const now=Date.now(),capturedAt=new Date(now).toISOString(),queries=plans.map(p=>p.name);
+  const products=plans.map(({name,keyword,attributes})=>({name,keyword,attributes}));
+  const base={version:2,capturedAt,queries,products,searches:[],items:[]};
+  if(!plans.length)return {...base,status:'needs_product',note:'尚未识别供应商产品，请填写公开产品名称后检索。'};
+  const stopAt=now+Math.min(55000,Math.max(0,Math.floor((deadline-now)*0.45)));
+  const pacer=searchPacer(fetcher,stopAt);
+  const pairs=plans.flatMap(plan=>PLATFORMS.map(platform=>{
+    const fallback=plan.queries[1]||plan.queries[0];
+    const directSite=platform.id==='1688'?'detail.1688.com/offer':'item.taobao.com/item.htm';
+    const prefix=platform.id==='1688'?'detail.1688.com/offer/':'taobao.com/list/item/';
+    const attempts=['site:'+platform.domain+' '+plan.queries[0]];
+    if(!legacy)attempts.push('site:'+directSite+' '+fallback,fallback+' "'+prefix+'"');
+    return {plan,platform,attempts,found:new Map(),direct:new Set(),queries:[],completed:0,error:''};
+  }));
+  if(key){
+    // Finish the first pass for all SKU/platform pairs before the first fallback query.
+    for(let pass=0;pass<(legacy?1:3);pass++){
+      const pending=pairs.filter(p=>!p.error&&![...p.found.values()].some(i=>!i.discoveryOnly));
+      await pooled(pending,5,async p=>{
+        const scoped=p.attempts[pass];
+        try{
+          p.queries.push(scoped);
+          const data=await searchRequest(scoped,pass===2,{key,fetcher,pacer,stopAt});
+          p.completed++;
+          addSearchResults(data,p.found,p.direct,p.plan,p.platform,capturedAt);
+          if(!legacy)discoverProductLinks(data,p.found,p.direct,p.plan,p.platform,capturedAt);
+        }catch(e){
+          p.error=e.name==='TimeoutError'?'检索超时':e.message;
+        }
+      });
+    }
+  }
+  const raw=pairs.map(p=>({
+    product:p.plan.name,platform:p.platform.name,capturedAt,queries:p.queries,directCount:p.direct.size,
+    matchedCount:0,readableCount:0,verifiedPriceCount:0,blockedCount:0,
+    status:!key?'not_configured':p.error?(p.completed?'partial':'failed'):'empty',
+    reason:key?p.error:'自动检索尚未配置',error:p.error||undefined,
+    items:[...p.found.values()].sort((a,b)=>marketRank(b)-marketRank(a)).slice(0,6)
+  }));
+  const searches=excludeAmbiguousProducts(raw);
+  const status=!key?'not_configured':searches.every(s=>s.status==='failed')?'failed':searches.some(s=>s.error)?'partial':'completed';
+  return updateCoverage({...base,status,searches:searches.map(({items,...s})=>s),items:searches.flatMap(s=>s.items),note:'仅展示1688和淘宝公开单品详情链接；搜到相似线索、读到标价和核实采购条件分别统计。'});
 }

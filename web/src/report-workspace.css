@@ -416,3 +416,57 @@ details summary{font-size:11px;cursor:pointer;line-height:1.8;color:#516c58;padd
   .supplier-document .supplier-product-card h5 { margin: 4px 0 2px; font-size: 11px; }
   .supplier-document .supplier-closing:has(.supplier-request-groups) { display: block; break-inside: auto; }
 }
+.market-summary-link{display:grid;grid-template-columns:auto 1fr auto auto;align-items:baseline;gap:12px;padding:14px 0;color:#254e41;border-block:1px solid #c4d3c9;text-decoration:none}
+.market-summary-link span{font-size:12px}
+.market-summary-link strong{font-size:17px}
+.market-sku{margin:28px 0;scroll-margin-top:96px}
+.market-sku-head,.platform-heading,.market-proof-dialog header{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.market-sku-head{padding:12px 0;border-top:2px solid #426655}
+.market-sku-head h3{margin:0;font-size:17px;color:#183b30}
+.market-sku-head p,.market-checked{color:#53675b;font-size:12px;margin:5px 0}
+.platform-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.platform-column{min-width:0}
+.platform-heading{margin:0 0 8px;padding:9px 12px;background:#eaf0e8;color:#214333;font-size:15px}
+.platform-heading small{font-size:12px;font-weight:500}
+.platform-empty{margin:10px 12px;font-size:13px;color:#536357}
+.market-sku .market-card{grid-template-columns:74px minmax(0,1fr);gap:10px;padding:12px;margin-bottom:8px}
+.market-sku .market-image{width:100%;--cover-height:90px}
+.market-sku .market-card-copy h4{margin-top:0}
+.market-refresh{white-space:nowrap;flex-shrink:0}
+.market-card .proof-open,.inline-proof summary{color:#215544;font-weight:650;cursor:pointer}
+.inline-proof img{display:block;max-width:100%;height:auto}
+.market-history>div{margin:10px 0;overflow-wrap:anywhere}
+.market-history span{font-size:12px;color:#54685c}
+.market-proof-dialog{width:min(1080px,94vw);max-height:90dvh;box-sizing:border-box;border:1px solid #adbdaf;border-radius:8px;padding:0 16px 16px;background:#fff}
+.market-proof-dialog::backdrop{background:#132c23b8}
+.market-proof-dialog header{position:sticky;top:0;align-items:center;padding:10px 0;background:white}
+.market-proof-dialog h2{font-size:17px;margin:0}
+.market-proof-dialog img{width:100%;height:auto;display:block}
+@container market-report (max-width:680px){.platform-pair{grid-template-columns:1fr;gap:10px}}
+@media(max-width:760px){.market-summary-link{grid-template-columns:1fr auto}.market-summary-link strong{font-size:15px}.market-sku-head{align-items:flex-start;flex-wrap:wrap}.platform-pair{grid-template-columns:1fr}}
+@media print{.market-refresh,.market-card .proof-open,.market-proof-dialog{display:none!important}.market-sku{break-inside:auto}.platform-pair{display:block}.market-sku-head,.platform-heading{break-after:avoid}.market-summary-link{margin:8px 0}}
+
+.price-proof-sheet{margin:24px 0 36px;min-width:0;scroll-margin-top:12px}
+.price-proof-sheet figcaption{margin:0 0 10px}
+.price-proof-sheet figcaption h3,.price-proof-sheet figcaption p{overflow-wrap:anywhere}
+.price-proof-sheet label{display:inline;cursor:pointer;font-size:14px}
+.price-proof-sheet input.proof-scale{width:auto;height:auto;vertical-align:middle;margin:4px 8px 7px 0}
+.price-proof-pan{max-width:100%;overflow:auto;overscroll-behavior:contain}
+.price-proof-pan img{display:block;width:100%;height:auto;max-width:100%}
+.price-proof-sheet .proof-scale:checked~.price-proof-pan,.market-proof-dialog.show-original .price-proof-pan{max-height:76vh}
+.price-proof-sheet .proof-scale:checked~.price-proof-pan img,.market-proof-dialog.show-original .price-proof-pan img{width:auto;max-width:none}
+.proof-back{display:inline-block;margin:10px 0}
+.market-print-options{width:min(430px,92vw);box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:22px}
+.market-print-options::backdrop{background:#132c2399}
+.market-print-options form{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.market-proof-dialog .proof-zoom{margin-left:auto}
+.print-prices-only{display:none}
+@media print{
+  .print-prices-only{display:block}
+  .market-print-options,.proof-scale,.price-proof-sheet label,.proof-back{display:none!important}
+  .price-proof-appendix{break-before:page}
+  .price-proof-sheet{break-inside:avoid;margin:8mm 0}
+  .price-proof-sheet .price-proof-pan{overflow:visible;max-height:none!important}
+  .price-proof-sheet .price-proof-pan img,.price-proof-sheet .proof-scale:checked~.price-proof-pan img{width:auto;height:auto;max-width:100%;max-height:195mm;object-fit:contain}
+}
+.market-sku .market-text-card{display:block;border-left:3px solid #829b84}

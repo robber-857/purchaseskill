@@ -6,6 +6,8 @@ import * as store from '../lib/store.mjs';
 import {analyze} from '../lib/analyze.mjs';
 import {cachedReview} from '../lib/sample-cache.mjs';
 import {searchMarket,verifyMarketSources,inspectProductLinks,safeMarketURL,singlePrice,chinaMarketComparison,MarketInputSchema} from '../lib/market.mjs';
+import {reportSearchTargets,mergeMarketRefresh,publicMarketItem} from '../lib/market-refresh.mjs';
+import {savePriceEvidence,readPriceEvidence} from '../lib/market-evidence.mjs';
 export const config={maxDuration:300};
 const hash=s=>createHash('sha256').update(s).digest('hex');
 function equal(a,b){return timingSafeEqual(Buffer.from(hash(a)),Buffer.from(hash(b)));}
@@ -15,18 +17,32 @@ export async function readBody(req,limit=32000){
   const parts=[];let size=0;for await(const p of req){size+=p.length;if(size>limit)throw new Error('请求过大');parts.push(p);}return JSON.parse(Buffer.concat(parts).toString()||'{}');
 }
 async function owner(req,id){if(!z.uuid().safeParse(id).success)throw new Error('无效任务');const token=(req.headers.authorization||'').replace(/^Bearer /,'');const job=await store.getJob(id);const workspace=workspaceSession(req);if(!job||!((token.length>=32&&equal(job.owner_hash,hash(token)))||(workspace&&job.context?.workspaceId===workspace)))throw new Error('无权访问此任务');return job;}
-const chinaReport=r=>r?{...r,...(r.marketComparison?{marketComparison:chinaMarketComparison(r.marketComparison)}:{})}:r;
+function chinaReport(r){
+  if(!r?.marketComparison)return r;
+  const m=chinaMarketComparison(r.marketComparison);
+  return {...r,marketComparison:{...m,items:m.items.map(publicMarketItem),historyItems:(m.historyItems||[]).map(publicMarketItem)}};
+}
+async function sendEvidence(res,job,evidenceId){
+  const file=await readPriceEvidence(job,evidenceId);
+  if(!file){res.statusCode=404;return res.end();}
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('Content-Type',file.contentType);
+  res.setHeader('Content-Length',file.bytes.length);
+  res.end(file.bytes);
+}
 const publicJob=j=>({id:j.id,status:j.status,files:j.files,context:(({workspaceId,...context})=>context)(j.context),createdAt:j.created_at,report:chinaReport(j.report),error:j.error,attempts:j.attempts});
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
   const reply=(data,status=200)=>{res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(data));};
+  const marketDeadline=Date.now()+275000;
   const url=new URL(req.url,'http://localhost');const action=url.searchParams.get('action')||'config';const limits=settings();
   try{
     if(!['GET','HEAD'].includes(req.method)&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return reply({error:'请求来源无效'},403);
     if(action==='config'&&req.method==='GET')return reply({storage:store.cloud()?'supabase':'local',ready:!process.env.VERCEL||Boolean(store.cloud()&&process.env.DEMO_INVITE_CODE),aiReady:Boolean(process.env.AI_API_KEY&&process.env.AI_MODEL),marketReady:Boolean(process.env.FIRECRAWL_API_KEY),requiresInvite:Boolean(process.env.DEMO_INVITE_CODE),maxFileMB:limits.maxFileMB,maxTotalMB:limits.maxTotalMB,maxPages:limits.maxPages,formats:EXTENSIONS,shareDays:limits.shareDays,workspaceReady:workspaceReady(),workspaceSignedIn:Boolean(workspaceSession(req))});
-    if(action==='shared'&&req.method==='GET'){
-      const token=url.searchParams.get('token')||'';if(!/^[a-f0-9]{48}$/.test(token))return reply({error:'链接无效或已失效'},404);
+    if(['shared','shared-evidence'].includes(action)&&req.method==='GET'){
+      const token=action==='shared'?url.searchParams.get('token')||'':(req.headers.authorization||'').replace(/^Bearer /,'');if(!/^[a-f0-9]{48}$/.test(token))return reply({error:'链接无效或已失效'},404);
       const item=await store.getShared(hash(token));if(!item?.shared_report||Date.parse(item.share_expires_at)<Date.now())return reply({error:'链接无效或已失效'},404);
+      if(action==='shared-evidence')return await sendEvidence(res,{id:item.id,report:item.shared_report},url.searchParams.get('evidence'));
       return reply({report:chinaReport(item.shared_report),expiresAt:item.share_expires_at});
     }
     if(process.env.VERCEL&&(!store.cloud()||!process.env.DEMO_INVITE_CODE))return reply({error:'本站暂未配置存储与邀请码。可先查看 Warmies 案例；管理员完成配置后即可上传。'},503);
@@ -51,6 +67,7 @@ export default async function handler(req,res){
     const id=url.searchParams.get('id');const job=await owner(req,id);
     if(action==='history-claim'&&req.method==='POST'){const workspace=workspaceSession(req);if(!workspace)return reply({error:'请先登录采购工作区'},401);if(job.context.workspaceId&&job.context.workspaceId!==workspace)return reply({error:'任务属于其他工作区'},403);await store.updateJob(job.id,{context:{...job.context,workspaceId:workspace}});return reply({ok:true});}
     if(action==='job'&&req.method==='GET')return reply(publicJob(job));
+    if(action==='market-evidence'&&req.method==='GET')return await sendEvidence(res,job,url.searchParams.get('evidence'));
     if(action==='upload'&&req.method==='PUT'&&!store.cloud()){
       if(job.status!=='uploading')throw new Error('任务不再接受上传');const slot=url.searchParams.get('slot');if(slot!=='manifest'&&(!/^\d$/.test(slot)||!job.files[Number(slot)]))throw new Error('上传位置无效');
       const limit=slot==='manifest'?16*MB:job.files[Number(slot)].size;let bytes=0;const chunks=[];for await(const chunk of req){bytes+=chunk.length;if(bytes>limit)throw new Error('上传超过声明大小');chunks.push(chunk);}if(slot!=='manifest'&&bytes!==limit)throw new Error('上传不完整');await store.putLocal(job,slot,Buffer.concat(chunks));return reply({ok:true});
@@ -63,10 +80,11 @@ export default async function handler(req,res){
         // The saved Warmies report remains available through the explicit example page.
         const cached=process.env.AI_API_KEY&&process.env.AI_MODEL?null:cachedReview(await store.firstFileDigest(job),job.context);
         const result=cached||await analyze(manifest,job.files,(({workspaceId,...context})=>context)(job.context));
-        const keywords=job.context.searchKeyword?[job.context.searchKeyword]:result.report.products.filter(p=>job.files[p.source]?.role!=='internal').map(p=>p.name);
-        const marketComparison={...await verifyMarketSources(await searchMarket(keywords)),offers:[],baseline:null};
+        const targets=reportSearchTargets(result.report,job.files,null,job.context.searchKeyword);
+        const found=await verifyMarketSources(await searchMarket(targets,{deadline:marketDeadline}),{deadline:marketDeadline,saveEvidence:data=>savePriceEvidence(job.id,data)});
+        const marketComparison=mergeMarketRefresh({},found,targets,targets.map(p=>p.name||p));
         const report={...result.report,marketComparison,mode:result.mode,model:result.model,usage:result.usage,requestId:result.requestId,ruleVersion:result.ruleVersion,createdAt:new Date().toISOString(),files:job.files.map(({name,size,role})=>({name,size,role:role||'supplier'})),coverage:{pages:manifest.pages.length,images:manifest.pages.reduce((n,p)=>n+p.images.length,0),textPages:manifest.pages.filter(p=>p.text.trim()).length},market:job.context.market,purpose:job.context.purpose};
-        await store.updateJob(job.id,{status:'completed',report,error:null,lock_until:null});return reply({id:job.id,status:'completed',report});
+        await store.updateJob(job.id,{status:'completed',report,error:null,lock_until:null});return reply({id:job.id,status:'completed',report:chinaReport(report)});
       }catch(error){await store.updateJob(job.id,{status:'failed',error:error.message.slice(0,1000),lock_until:null});throw error;}
     }
     if(action==='supplier'&&req.method==='POST'){
@@ -75,31 +93,56 @@ export default async function handler(req,res){
       const {buildSupplierReview}=await import('../lib/supplier-review.mjs');
       const manifest=validateManifest(await store.getManifest(job),job.files,limits.maxPages);
       const supplierReview=await buildSupplierReview(manifest,job.files);
-      const latest=await store.getJob(job.id);const report={...latest.report,supplierReview};
-      await store.updateJob(job.id,{report});return reply({report:chinaReport(report)});
+      const report=await store.mutateReport(job.id,latest=>({...latest,supplierReview}));
+      return reply({report:chinaReport(report)});
     }
     if(action==='market'&&req.method==='POST'){
       if(!job.report)throw new Error('请先生成报告');
       const input=MarketInputSchema.parse(await readBody(req,600000));
-      if(input.screenshot&&Object.keys(input).length!==1)throw new Error('请单独提交价格截图');
-      if(input.keyword&&(input.offers!==undefined||input.baseline!==undefined))throw new Error('请分别执行检索和报价保存');
-      const previous=chinaMarketComparison(job.report.marketComparison)||{offers:[],baseline:null};
-      const marketComparison=input.keyword?{...previous,...await verifyMarketSources(await searchMarket([input.keyword]))}:{...previous,...(input.offers!==undefined?{offers:input.offers}:{}),...(input.baseline!==undefined?{baseline:input.baseline}:{}),updatedAt:new Date().toISOString()};
-      if(input.sourceUrls){
-        const added=await inspectProductLinks(input.sourceUrls,previous.queries?.[0]||'买方指定产品');
-        const urls=new Set(added.map(i=>i.url));
-        marketComparison.items=[...(previous.items||[]).filter(i=>!urls.has(safeMarketURL(i.url))),...added].slice(-60);
-      }
-      if(input.screenshot){
+      const refreshing=Boolean(input.keyword||input.product)&&!input.sourceUrls&&!input.screenshot&&input.offers===undefined&&input.baseline===undefined;
+      const operationCount=Number(refreshing)+Number(Boolean(input.sourceUrls))+Number(Boolean(input.screenshot))+Number(input.offers!==undefined||input.baseline!==undefined);
+      if(operationCount!==1||(!refreshing&&input.keyword))throw new Error('请分别提交检索、来源、截图或报价');
+      const planned=reportSearchTargets(job.report,job.files,null);
+      const names=planned.map(p=>p.name||p);
+      const target=input.product||names[0]||job.report.marketComparison?.queries?.[0]||'买方指定产品';
+      if(input.product&&names.length&&!names.includes(input.product))throw new Error('请选择报告中的供应商产品');
+      const options={deadline:marketDeadline,saveEvidence:data=>savePriceEvidence(job.id,data)};
+      let refreshed,targets,added=[];
+      if(refreshing){
+        targets=reportSearchTargets(job.report,job.files,input.product,input.keyword||'');
+        refreshed=await verifyMarketSources(await searchMarket(targets,{deadline:marketDeadline}),options);
+      }else if(input.sourceUrls){
+        added=await inspectProductLinks(input.sourceUrls,target,options);
+      }else if(input.screenshot){
         const {readMarketScreenshot}=await import('../lib/market-vision.mjs');
         const s=input.screenshot,url=safeMarketURL(s.sourceURL),checkedAt=new Date().toISOString();
-        const ocr=await readMarketScreenshot({screenshot:s.image,title:s.title,product:previous.queries?.[0]||s.title,pageType:'buyer_screenshot'});
-        if(['failed','not_configured'].includes(ocr.status))throw new Error(ocr.note);const matching=ocr.offers.filter(p=>p.matchesCandidate&&singlePrice([p.priceText]));if(matching.length!==1)throw new Error('截图未能确认目标商品的唯一价格，请截取单一商品及对应规格、标价后重试');ocr.offers=matching;
-        const item={product:previous.queries?.[0]||s.title,title:s.title,url,platform:new URL(url).hostname,kind:'买方截图参考',pageType:'buyer_screenshot',sourceType:'buyer_screenshot',capturedAt:checkedAt,priceMentions:[],snippet:'买方上传的价格截图，未独立核实截图与链接的一致性。',match:'截图识别 · 不是来源页实时验证',ocr:{...ocr,sourceURL:url,checkedAt,buyerProvided:true,screenshotData:s.image}};
-        marketComparison.items=[...(previous.items||[]).filter(x=>!(x.url===url&&x.sourceType==='buyer_screenshot')),...[item]].slice(-60);
+        const ocr=await readMarketScreenshot({screenshot:s.image,title:s.title,product:target,pageType:'buyer_screenshot'});
+        const matching=ocr.offers.filter(p=>p.matchesCandidate&&singlePrice([p.priceText]));
+        if(matching.length!==1)throw new Error('截图未能确认目标商品的唯一价格，请保留商品名称、规格和标价后重试');
+        const proof=await savePriceEvidence(job.id,{sourceURL:url,finalURL:url,screenshot:s.image,origin:'buyer_upload',capturedAt:checkedAt,priceText:matching[0].priceText});
+        if(!proof)throw new Error('未能保存价格截图，请重新上传原图');
+        added=[{product:target,title:s.title,url,platform:new URL(url).hostname,kind:'买方截图参考',pageType:'product',sourceType:'buyer_screenshot',capturedAt:checkedAt,priceMentions:[],snippet:'买方提供的商品页截图',match:'买方截图，规格待核对',priceEvidence:proof,ocr:{...ocr,offers:matching,sourceURL:url,checkedAt,buyerProvided:true}}];
       }
-      const report={...job.report,marketComparison};
-      await store.updateJob(job.id,{report});return reply({report});
+      const report=await store.mutateReport(job.id,latest=>{
+        const previous=latest.marketComparison||{offers:[],baseline:null};
+        if(refreshed){
+          const m=mergeMarketRefresh(previous,refreshed,targets,names.length?names:targets.map(p=>p.name||p));
+          return {...latest,marketComparison:m};
+        }
+        const m={...previous,updatedAt:new Date().toISOString()};
+        if(added.length){
+          const replaced=(previous.items||[]).filter(old=>added.some(item=>old.product===item.product&&old.url===item.url&&old.sourceType===item.sourceType));
+          m.historyItems=[...(previous.historyItems||[]),...replaced];
+          m.items=[...(previous.items||[]).filter(old=>!replaced.includes(old)),...added];
+        }
+        if(input.offers!==undefined){
+          if(JSON.stringify(job.report.marketComparison?.offers||[])!==JSON.stringify(previous.offers||[]))throw new Error('报价列表已更新，请重新打开报告后再保存');
+          m.offers=input.offers;
+        }
+        if(input.baseline!==undefined)m.baseline=input.baseline;
+        return {...latest,marketComparison:m};
+      });
+      return reply({report:chinaReport(report)});
     }
     if(action==='share'&&req.method==='POST'){
       if(!job.report)throw new Error('请先生成报告');const body=z.object({audience:z.enum(['review','supplier'])}).parse(await readBody(req));const token=randomBytes(24).toString('hex');const expires=new Date(Date.now()+limits.shareDays*86400000).toISOString();
