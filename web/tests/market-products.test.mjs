@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {marketProducts,searchMarket,verifyMarketSources,isSingleProductURL,inspectMarketPage,chinaMarketComparison} from '../lib/market.mjs';
+import {marketProducts,searchMarket,verifyMarketSources,includeKnownSources,isSingleProductURL,inspectMarketPage,chinaMarketComparison} from '../lib/market.mjs';
+import {mergeMarketRefresh} from '../lib/market-refresh.mjs';
 import {productPlan,productSimilarity} from '../lib/market-products.mjs';
 
 const ok = data => ({ok:true,json:async()=>({success:true,data})});
@@ -132,4 +133,45 @@ test('verification preserves inspected prices and stops queued SKUs when a slow 
   assert.equal(result.items.filter(i=>i.verification.status==='not_checked').length,6);
   assert.equal(result.items.filter(i=>i.verification.price==='￥24').length,6);
   assert.ok(result.items.every(i=>!i.priceEvidence));
+});
+
+test('refresh deduplicates known aliases per SKU and variant, prioritizes proof, and carries no stale observations',()=>{
+  const targets=[{name:'蜜香红茶'}],capturedAt='2026-11-22';
+  const item=(url,opts={})=>({product:targets[0].name,url,sourceType:'reviewed_source',capturedAt:'2026-11-01',...opts});
+  const verified=item('https://item.taobao.com/item.htm?id=4321&skuId=90',{priceEvidence:{id:'old'},priceMentions:['￥999'],ocr:{status:'read'},similarity:{matched:['私有复核批注']}});
+  const indexed='https://www.taobao.com/list/item/4321.htm?skuId=90';
+  const previous={items:[verified,item('https://item.taobao.com/item.htm?id=4321&skuId=91'),item('https://item.taobao.com/item.htm?id=4',{product:'别的产品'})],
+    historyItems:[item(indexed),item('https://item.taobao.com/item.htm?id=5',{sourceType:'marketplace',verification:{readable:true}}),item('https://s.1688.com/selloffer/list'),item(detail)]};
+  const fresh={items:[{product:'蜜香红茶',url:indexed,title:'本轮索引',priceMentions:[]}],capturedAt,status:'partial'};
+  const result=includeKnownSources(fresh,previous,targets);
+  assert.equal(result.items.length,3);
+  assert.equal(result.items.filter(i=>i.recheckKnownSource).length,3);
+  assert.equal(fresh.items[0].recheckKnownSource,undefined);
+  assert.ok(result.items.some(i=>i.url.includes('skuId=91')));
+  assert.doesNotMatch(JSON.stringify(result),/999|私有复核批注|2026-11-01|"old"|selloffer|别的产品/);
+});
+
+test('a rate-limited SKU can refresh a known price from the original page; failure keeps the dated original only',async()=>{
+  const product='工夫红茶',products=[{name:product}],capturedAt='2026-11-22';
+  const previous={items:[{product,url:detail,platform:'1688',title:'人工复核旧标题',sourceType:'reviewed_source',priceEvidence:{id:'old',priceText:'￥99'},
+    similarity:{matched:['人工记录']},capturedAt:'2026-11-01'}]};
+  const fresh={capturedAt,items:[],products,searches:[{product,platform:'1688',directCount:0,status:'failed',error:'检索服务限流'}],status:'failed'};
+  for(const blocked of [false,true]){
+    const plan=includeKnownSources(structuredClone(fresh),previous,products);
+    const result=await verifyMarketSources(plan,{key:'test',
+      fetcher:fetchResults({markdown:blocked?'CAPTCHA':'# 工夫红茶\n￥24',metadata:{url:detail,'og:type':'product','og:title':'工夫红茶','og:price:amount':'24','og:price:currency':'CNY'}})});
+    const merged=mergeMarketRefresh(previous,result,products,[product]);
+    assert.equal(merged.items.find(i=>i.priceEvidence?.id==='old').capturedAt,'2026-11-01');
+    assert.ok(merged.items.find(i=>i.priceEvidence?.id==='old').similarity.matched.includes('人工记录'));
+    assert.ok(!result.items.some(i=>i.priceEvidence?.id==='old'));
+    const latest=result.items.find(i=>i.sourceType==='rechecked_source');
+    if(blocked){
+      assert.equal(latest,undefined);
+      assert.equal(result.searches[0].verifiedPriceCount,0);
+    }else{
+      assert.equal(latest.verification.price,'CNY 24.00');
+      assert.equal(result.searches[0].status,'partial');
+      assert.match(result.searches[0].reason,/限流.*重新核实/);
+    }
+  }
 });

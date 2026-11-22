@@ -26,9 +26,10 @@ export function mergeMarketRefresh(previous={},fresh,targets,allNames){
   if(superseded.size&&!active.size)return previous;
   const manual=item=>['buyer_screenshot','open_web','reviewed_source'].includes(item.sourceType);
   const oldItems=previous.items||[];
-  const interrupted=(fresh.searches||[]).filter(s=>s.status==='failed'||s.error);
+  const isNewPriceFor=item=>fresh.items.some(f=>f.product===item.product&&f.url===item.url&&f.priceEvidence?.id&&f.priceEvidence.id!==item.priceEvidence?.id);
+  const interrupted=(fresh.searches||[]).filter(s=>['failed','partial','not_configured','not_checked'].includes(s.status)||s.error);
   const preserveProof=item=>item.priceEvidence?.id&&interrupted.some(s=>s.product===item.product&&s.platform===item.platform)&&!fresh.items.some(newItem=>newItem.product===item.product&&newItem.url===item.url&&newItem.priceEvidence?.id);
-  const keepOld=item=>manual(item)||preserveProof(item)||(!active.has(item.product)&&all.has(item.product));
+  const keepOld=item=>(manual(item)&&!isNewPriceFor(item))||preserveProof(item)||(!active.has(item.product)&&all.has(item.product));
   const carry=oldItems.filter(keepOld);
   const current=unique([...carry,...fresh.items.filter(i=>active.has(i.product))]);
   const identities=new Set(current.map(itemIdentity));

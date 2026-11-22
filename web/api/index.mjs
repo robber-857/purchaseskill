@@ -5,7 +5,7 @@ import {CreateSchema,MB,EXTENSIONS,validateFiles,validateManifest,supplierSnapsh
 import * as store from '../lib/store.mjs';
 import {analyze} from '../lib/analyze.mjs';
 import {cachedReview} from '../lib/sample-cache.mjs';
-import {searchMarket,verifyMarketSources,inspectProductLinks,safeMarketURL,singlePrice,chinaMarketComparison,MarketInputSchema} from '../lib/market.mjs';
+import {searchMarket,verifyMarketSources,includeKnownSources,inspectProductLinks,safeMarketURL,singlePrice,chinaMarketComparison,MarketInputSchema} from '../lib/market.mjs';
 import {reportSearchTargets,mergeMarketRefresh,publicMarketItem} from '../lib/market-refresh.mjs';
 import {savePriceEvidence,readPriceEvidence} from '../lib/market-evidence.mjs';
 export const config={maxDuration:300};
@@ -110,7 +110,8 @@ export default async function handler(req,res){
       let refreshed,targets,added=[];
       if(refreshing){
         targets=reportSearchTargets(job.report,job.files,input.product,input.keyword||'');
-        refreshed=await verifyMarketSources(await searchMarket(targets,{deadline:marketDeadline}),options);
+        const search=await searchMarket(targets,{deadline:marketDeadline});
+        refreshed=await verifyMarketSources(includeKnownSources(search,job.report.marketComparison,targets),options);
       }else if(input.sourceUrls){
         added=await inspectProductLinks(input.sourceUrls,target,options);
       }else if(input.screenshot){

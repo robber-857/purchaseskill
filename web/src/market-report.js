@@ -58,6 +58,10 @@ export function evidenceAppendix(m){
     ${missing.length?`<p>以下截图未能读取，未收录于本文件。</p><ul>${[...new Set(missing)].map(title=>`<li>${title}</li>`).join('')}</ul>`:''}</section>`;
 }
 function marketCover(o,platform){
+  const preview=o.archivedCover;
+  if(o.priceEvidence?.id&&preview?.proofId===o.priceEvidence.id&&preview?.data?.length<26000&&/^data:image\/(?:webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(preview.data)){
+    return `<div class="market-image market-archived-photo"><img loading="lazy" alt="${e(o.title)}，采集时商品图" src="${e(preview.data)}"></div>`;
+  }
   // Stack the preferred photo last so an unavailable source reveals the next.
   const photos=marketCoverURLs(o).reverse().map(url=>`<div class="market-cover-photo">
     <span class="market-photo-mat"><i></i></span>
@@ -72,17 +76,58 @@ const verificationLabel={
   unavailable:'商品页暂时无法打开，可向商家索取最新报价。',
   unconfirmed:'尚未在商品页确认对应规格的价格。'
 };
+export function listingId(item){
+  const proof=item.priceEvidence;
+  if(!/^[a-f0-9]{64}$/.test(proof?.id||''))return null;
+  // The same screenshot can serve different products or variants. A stable
+  // suffix preserves each relationship when rows are reordered or archived.
+  const identity=JSON.stringify([item.product,proof.sourceURL||item.url,proof.capturedAt,proof.priceText]);
+  let hash=14695981039346656037n;
+  for(const byte of new TextEncoder().encode(identity))hash=BigInt.asUintN(64,(hash^BigInt(byte))*1099511628211n);
+  return 'listing-'+proof.id+'-'+hash.toString(36);
+}
+function listingLink(item){
+  const id=listingId(item);
+  return id?`<a class="listing-link" href="#${id}">商品留档</a>`:'';
+}
+function listingRecords(items){
+  const records=new Map(),proofs=new Set();
+  for(const item of items){
+    const id=listingId(item);
+    if(!id||records.has(id))continue;
+    const proof=item.priceEvidence,source=proof.sourceURL||item.url;
+    const platform=PLATFORMS.find(p=>safeMarketURL(source,p.domain))?.name||item.platform;
+    const [price,conditions]=priceDisplay(item);
+    const matched=item.similarity?.matched?.join('、'),missing=item.similarity?.missing?.join('、');
+    const access=item.sourceAccess==='login'?'直接访问原页时要求登录。':item.sourceAccess==='verification'?'直接访问原页时要求完成平台验证。':'';
+    const short=proofs.has(proof.id)?'':`<span class="listing-alias" id="listing-${proof.id}" data-listing-target="${id}"></span>`;
+    proofs.add(proof.id);
+    records.set(id,`${short}<section class="listing-record" id="${id}" aria-labelledby="${id}-title" tabindex="-1">
+      <p class="report-kicker">${e(platform)} · 商品留档</p><h3 id="${id}-title">${e(item.originalPageTitle||item.title||item.product)}</h3>
+      <p>对应采购款式：${e(item.product)}</p>
+      <dl><dt>留档标价</dt><dd><strong>${e(price)}</strong> · ${e(conditions)}</dd>
+      <dt>采集时间</dt><dd>${e(dateText(proof.capturedAt||item.capturedAt)||'原记录未注明')}</dd>
+      <dt>相似点</dt><dd>${e(matched||'原记录未注明，待核对')}</dd>
+      <dt>差异及待核规格</dt><dd>${e(missing||'具体规格与交易条件仍待核对')}</dd></dl>
+      ${item.variantTextEvidence?`<p><b>商品页规格选项原文</b>　${e(item.variantTextEvidence)}</p>`:''}
+      ${item.verification?.excerpt?`<details><summary>查看留档时的商品页文字</summary><blockquote>${e(item.verification.excerpt)}</blockquote></details>`:''}
+      ${access?`<p class="listing-access">${access} 可在本报告查看采集时保存的价格截图。</p>`:''}
+      <div class="market-links">${evidenceControl(item)}${isSingleProductURL(source)?link(source,'查看官方商品页'):''}<a href="#market-comparison">返回逐款比价</a></div>
+    </section>`);
+  }
+  return [...records.values()].join('');
+}
 function candidateCard(o){
   const platform=PLATFORMS.find(p=>safeMarketURL(o.url,p.domain))?.name||o.platform;
   const [price,priceNote]=priceDisplay(o);
   const checked=dateText(o.verification?.checkedAt||o.capturedAt);
   const matches=o.similarity?.matched||[],missing=o.similarity?.missing||[];
-  const showCover=marketCoverURLs(o).length||!o.priceEvidence?.id;
+  const showCover=o.archivedCover?.data||marketCoverURLs(o).length||!o.priceEvidence?.id;
   return `<article class="market-card${showCover?'':' market-text-card'}">${showCover?marketCover(o,platform):''}<div class="market-card-copy">
     <h4>${link(o.url,o.title||o.product)}</h4><strong class="market-card-price">${e(price)}</strong><small>${e(priceNote)}</small>
     ${matches.length?`<p><b>相似点</b> ${e(matches.join('、'))}</p>`:''}
     ${missing.length?`<p><b>待核规格</b> ${e(missing.join('、'))}</p>`:''}
-    <div class="market-links">${link(o.url,'查看商品页')}${evidenceControl(o)}</div>
+    <div class="market-links">${listingLink(o)}${link(o.url,'查看商品页')}${evidenceControl(o)}</div>
     <details><summary>报价依据</summary>${checked?`<small>采集于 ${e(checked)}</small>`:''}
     <p>${e(verificationLabel[o.verification?.status]||'请核对页面中的规格和交易条件。')}</p>
     ${o.ocr?.offers?.length===1?`<p>${e([o.ocr.offers[0].specification,o.ocr.offers[0].unit,o.ocr.offers[0].conditions].filter(Boolean).join(' · '))}</p>`:''}
@@ -149,7 +194,7 @@ export function marketHTML(m,{editable=false}={}){
   const coverage=m?.searches?.length?`<details><summary>各平台搜索结果</summary><ul>${m.searches.map(s=>`<li>${e(s.product)} · ${e(s.platform)}：${e(({found:'找到候选',empty:'未检索到可用线索',failed:'暂未取得结果，可稍后重试'})[s.status]||'暂无结果')}</li>`).join('')}</ul></details>`:'';
   const updated=dateText(m?.capturedAt);
   const status=m?.status?`<p><strong>${e(states[m.status]||'尚未检索')}</strong>${updated?' · '+e(updated):''}</p>`:'';
-  if(!items.length&&!rows.length&&!m?.baseline&&!m?.products?.length&&!m?.searches?.length){
+  if(!items.length&&!rows.length&&!m?.baseline&&!m?.products?.length&&!m?.searches?.length&&!m?.historyItems?.length){
     return `<section id="market-comparison" class="market-section">${heading}${status}
       <p class="data-needed">此报告暂无可对照的报价。可补充产品型号或同规格商品的链接、起订量和到货单价。</p>${coverage}</section>`;
   }
@@ -158,7 +203,8 @@ export function marketHTML(m,{editable=false}={}){
     ${status}${coverage}
     ${observed.length?`<h3>已读取商品页标价</h3><p>商品页标价可作市场参考。请在采购前与商家确认对应规格、采购数量和到货价。</p><div class="market-links">${Object.entries(groups).map(([currency,xs])=>`<strong>${e(currency)}：${n(Math.min(...xs.map(o=>o.verification.amount)))}–${n(Math.max(...xs.map(o=>o.verification.amount)))} · ${xs.length} 个候选</strong>`).join('')}</div><div class="table-scroll"><table class="market-reading-table"><thead><tr><th>相似商品 / 来源</th><th>商品页价格</th><th>规格与价格证据</th></tr></thead><tbody>${observed.map(o=>`<tr><td>${link(o.url,o.verification.productTitle)}<small>${e(o.platform)}</small></td><td data-label="商品页价格"><strong>${e(o.verification.price)}</strong><small>商品页参考 · ${e(o.verification.availability)}<br>${e(dateText(o.verification.checkedAt))}</small></td><td data-label="规格与价格依据"><details><summary>查看商品页原文与选项</summary><pre style="white-space:pre-wrap">${e(o.verification.excerpt)}</pre></details></td></tr>`).join('')}</tbody></table></div>`:''}
     ${productGroups(m,items,editable)}
-    ${m?.historyItems?.length?`<details class="market-history"><summary>以往检索记录（${m.historyItems.length}）</summary><p>记录保留采集时的款式归属和日期。</p>${m.historyItems.map(i=>`<div><span>${e(i.product)} · ${e(dateText(i.capturedAt))}</span> ${isSingleProductURL(i.url)&&!['redirected','unavailable','blocked'].includes(i.verification?.status)?link(i.url,i.title||'商品页'):e(i.title||'未核实的来源')} ${evidenceControl(i)}</div>`).join('')}</details>`:''}
+    ${listingRecords([...(m?.items||[]),...(m?.historyItems||[])])}
+    ${m?.historyItems?.length?`<details class="market-history"><summary>以往检索记录（${m.historyItems.length}）</summary><p>记录保留采集时的款式归属和日期。</p>${m.historyItems.map(i=>`<div><span>${e(i.product)} · ${e(dateText(i.capturedAt))}</span> ${isSingleProductURL(i.url)&&!['redirected','unavailable','blocked'].includes(i.verification?.status)?link(i.url,i.title||'商品页'):e(i.title||'未核实的来源')} ${listingLink(i)} ${evidenceControl(i)}</div>`).join('')}</details>`:''}
     <h3>采购报价对照</h3><p>${m?.baseline?`供应商基准：${e(m.baseline.product)} · ${e(m.baseline.currency)} ${n(m.baseline.price)} / ${e(m.baseline.unit)} · 数量 ${n(m.baseline.quantity)} · ${m.baseline.taxShippingIncluded?'已确认含税到货':'税运待确认'}`:'尚未录入供应商基准，无法计算价差。'}</p>
     ${rows.length?`<div class="table-scroll"><table class="market-reading-table"><caption>同一采购数量下的报价差异</caption><thead><tr><th>商品 / 商家 / 来源</th><th>规格与采购条件</th><th>价格 / 数量</th><th>交付与售后</th><th>可比性与价差</th></tr></thead><tbody>${rows.map(o=>`<tr><td>${link(o.url,o.title)}<small>${e(o.platform)} · ${e(o.seller||'商家待确认')}<br>评估对象：${e(o.product)}<br>核对日期 ${e(o.observedAt)}</small></td><td data-label="规格与采购条件">${e(o.model||'规格待确认')}<small>${e(o.conditions||'其他条件待确认')}<br>${o.taxShippingIncluded?'含税到货':'税运待确认'} · ${o.sameSpecification?'买方确认规格可替代':'规格待核验'}</small></td><td data-label="价格与数量">${e(o.currency)} ${n(o.price)} / ${e(o.unit)}<small>${e(o.kind)} · 起订量 ${n(o.moq)}<br>适用数量 ${n(o.quantity)}</small></td><td data-label="交付与售后">${e(o.delivery||'交期待确认')}<small>${e(o.afterSales||'售后待确认')}</small></td><td data-label="可比性与价差">${o.comparable?`单价差 ${n(o.delta)}（${n(o.deltaPercent)}%）<small>采购总额 ${n(o.total)} ${e(o.currency)}<br>较基准节省 ${n(o.savings)} ${e(o.currency)}</small>`:e(o.reasons.join('；'))}</td></tr>`).join('')}</tbody></table></div>`:'<p>可补充平台商品链接、规格、实际报价、起订量、税运、交付及售后，形成可复核的采购对照。</p>'}
     <p class="brief-boundary">比价仅供买方内部使用。采购前请核对同款规格、起订量、税费与运费。</p></section>`;

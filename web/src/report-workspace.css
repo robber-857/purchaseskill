@@ -470,3 +470,16 @@ details summary{font-size:11px;cursor:pointer;line-height:1.8;color:#516c58;padd
   .price-proof-sheet .price-proof-pan img,.price-proof-sheet .proof-scale:checked~.price-proof-pan img{width:auto;height:auto;max-width:100%;max-height:195mm;object-fit:contain}
 }
 .market-sku .market-text-card{display:block;border-left:3px solid #829b84}
+.listing-record{display:none;scroll-margin-top:calc(var(--report-toolbar-height,0px) + 12px);margin:20px 0;border:1px solid #cedacf;border-radius:8px;padding:18px;overflow-wrap:anywhere}
+.listing-record:target,.listing-alias:target+.listing-record,.listing-record.is-open{display:block}
+.listing-alias{display:block;height:0;scroll-margin-top:calc(var(--report-toolbar-height,0px) + 12px)}
+.listing-record h3{font-size:20px;line-height:1.35;margin:6px 0}
+.listing-record dl{display:grid;grid-template-columns:minmax(6em,max-content) minmax(0,1fr);gap:6px 12px;margin:14px 0}
+.listing-record dd{margin:0}.listing-record dt{color:#496755}
+.listing-record blockquote{white-space:pre-wrap;margin:8px 0}
+.listing-access{border-left:3px solid #78947f;padding-left:10px}
+.listing-link{font-weight:650}
+html:has(.export-body .listing-record){scroll-behavior:auto}
+@media(max-width:480px){.listing-record{padding:12px}.listing-record dl{grid-template-columns:1fr;gap:3px}.listing-record dd{margin-bottom:6px}}
+@media print{.listing-record,.listing-alias,.listing-link{display:none!important}}
+.market-archived-photo img{display:block;width:100%;height:100%;object-fit:contain;background:#fff}.market-card .market-links{align-items:center}.market-card .market-links .proof-open{margin:0;padding:4px 0}

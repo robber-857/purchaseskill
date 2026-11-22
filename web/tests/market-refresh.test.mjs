@@ -1,10 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mergeMarketRefresh,publicMarketItem,reportSearchTargets} from '../lib/market-refresh.mjs';
-import {marketHTML,coverageSummary} from '../src/market-report.js';
+import {marketHTML,coverageSummary,listingId} from '../src/market-report.js';
 
 const first='甲杯',second='乙杯';
 const item=(product,id,sourceType='marketplace')=>({product,title:product,sourceType,url:'https://detail.1688.com/offer/'+id+'.html',platform:'1688'});
+test('official listing archives survive reordering and work without JavaScript or an external marketplace login',()=>{
+  const digest='f'.repeat(64);
+  const record={...item(first,1),sourceAccess:'login',originalPageTitle:'原商品名',priceConditions:'银色，起订 2 件',variantTextEvidence:'银色 300ml ¥20',
+    similarity:{matched:['内胆材质'],missing:['容量相差 20ml']},verification:{excerpt:'原页面文字'},
+    priceEvidence:{id:digest,capturedAt:'2026-11-22T01:00:00Z',priceText:'¥20',embedded:'data:image/png;base64,YQ=='}};
+  const related={...record,product:second,sourceAccess:'verification'};
+  const records={version:2,products:[{name:first},{name:second}],items:[record],historyItems:[related]};
+  const html=marketHTML(records),reordered=marketHTML({...records,items:[related],historyItems:[record]});
+  assert.notEqual(listingId(record),listingId(related));
+  for(const content of [html,reordered]){
+    assert.equal(content.split('id="listing-'+digest+'"').length,2);
+    for(const row of [record,related]){
+      const anchor=listingId(row);
+      assert.equal(content.split('id="'+anchor+'"').length,2);
+      assert.ok(content.includes('href="#'+anchor+'"'));
+    }
+    for(const text of ['直接访问原页时要求登录','直接访问原页时要求完成平台验证','原商品名','采集时间','银色，起订 2 件','容量相差 20ml','商品页规格选项原文','原页面文字','查看官方商品页'])
+      assert.ok(content.includes(text),text);
+    assert.ok(content.includes('href="#price-proof-'+digest+'"'));
+    assert.ok(!content.includes('data-price-proof')&&!content.includes('javascript:'));
+  }
+});
 test('refresh one SKU preserves the other SKU, manual notes and prior evidence across retries',()=>{
   const a=item(first,1),b=item(second,2),manual=item(first,3,'buyer_screenshot'),old=item('保温杯',4);
   const previous={items:[a,b,manual,old],offers:[{title:'人工报价'}],baseline:{product:second},searches:[{product:second,platform:'1688'}]};

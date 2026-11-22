@@ -182,14 +182,26 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
   });
   document.querySelectorAll('[data-remove-offer]').forEach(button=>button.onclick=()=>saveMarket({offers:(r.marketComparison?.offers||[]).filter((_,i)=>i!==Number(button.dataset.removeOffer))}));
   document.querySelectorAll('[data-audience]').forEach(button=>button.onclick=async()=>{const audience=button.dataset.audience;if(audience==='supplier'&&!sample&&config.aiReady&&r.supplierReview?.version!==3){button.disabled=true;button.textContent='正在生成供应商商务报告…';try{const result=await api('supplier',{body:{}});showReport(result.report,{shared,sample,audience});}catch(err){notify(err.message);button.disabled=false;button.textContent='供应商反馈';}return;}showReport(r,{shared,sample,audience});});
-  for(const a of app.querySelectorAll('a[href^="#"]'))a.addEventListener('click',event=>{
+  for(const a of app.querySelectorAll('a[href^="#"]')){
+    const fragment=a.hash.slice(1),listing=a.classList.contains('listing-link');
+    if(listing&&shared&&location.pathname==='/share'){
+      const url=new URL(location.href);url.searchParams.set('listing',fragment);a.href=url.href;
+    }else if(listing&&!shared&&job?.id&&config.workspaceSignedIn){
+      a.href='/history?report='+encodeURIComponent(job.id)+'#'+fragment;
+    }
+    a.addEventListener('click',event=>{
     if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
-    const target=document.getElementById(a.hash.slice(1));
+    const target=document.getElementById(fragment);
     if(!target)return;
     event.preventDefault();
-    if(location.pathname==='/example/warmies')history.replaceState(history.state,'',a.hash);
+    if(listing){if(a.href!==location.href)history.pushState(history.state,'',a.href);}
+    else if(location.pathname==='/share'&&new URLSearchParams(location.search).has('listing')){
+      const url=new URL(location.href);url.searchParams.delete('listing');history.pushState(history.state,'',url);
+    }else if(location.hash.startsWith('#listing-'))history.pushState(history.state,'','#'+fragment);
+    else if(location.pathname==='/example/warmies')history.replaceState(history.state,'','#'+fragment);
     revealSection(target);
-  });
+    });
+  }
   const proofContext={id:job?.id,token:job?.token,share:shared&&location.pathname==='/share'?location.hash.slice(1):null};
   document.querySelectorAll('[data-price-proof]').forEach(button=>button.onclick=async()=>{
     try{await viewEvidence(button.dataset.priceProof,proofContext);}catch(err){notify(err.message);}
@@ -221,10 +233,17 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
   measureToolbar();
   toolbarObserver = new ResizeObserver(measureToolbar);
   toolbarObserver.observe(toolbar, {box:'border-box'});
-  const section=location.pathname==='/example/warmies'&&document.getElementById(location.hash.slice(1));
+  const section=reportSectionFromURL();
   if(section)revealSection(section);else window.scrollTo(0,0);
 }
+function reportSectionFromURL(){
+  const fragment=location.pathname==='/share'?new URLSearchParams(location.search).get('listing'):location.hash.slice(1);
+  return fragment&&document.getElementById(fragment);
+}
 function revealSection(target){
+  if(target.dataset.listingTarget)target=document.getElementById(target.dataset.listingTarget)||target;
+  for(const record of app.querySelectorAll('.listing-record.is-open'))record.classList.remove('is-open');
+  if(target.classList.contains('listing-record'))target.classList.add('is-open');
   for(let element=target;element;element=element.parentElement)if(element.tagName==='DETAILS')element.open=true;
   target.setAttribute('tabindex','-1');
   target.focus({preventScroll:true});
@@ -327,9 +346,11 @@ async function historyPage(){
   await load();
 }
 async function openHistory(id){
-  const status=document.querySelector('#history-status');status.textContent='正在打开报告…';try{const result=await api('job',{id,token:null});if(!result.report){status.textContent=result.status==='analyzing'?'此任务仍在分析，请稍后刷新报告列表。':'此任务尚无完成报告，请返回工作台重新选择资料生成。';return;}job={id};sourceFiles=[];manifest=null;showReport(result.report);
-    const section=location.hash==='#market-comparison'?document.getElementById('market-comparison'):null;
-    if(section)revealSection(section);else window.scrollTo(0,0);}catch(err){status.textContent=err.message;}
+  const status=document.querySelector('#history-status');status.textContent='正在打开报告…';try{const result=await api('job',{id,token:null});if(!result.report){status.textContent=result.status==='analyzing'?'此任务仍在分析，请稍后刷新报告列表。':'此任务尚无完成报告，请返回工作台重新选择资料生成。';return;}
+    if(!status.isConnected)return;
+    if(new URLSearchParams(location.search).get('report')!==id)history.pushState({},'','/history?report='+encodeURIComponent(id));
+    job={id};sourceFiles=[];manifest=null;showReport(result.report);
+  }catch(err){status.textContent=err.message;}
 }
 
 function navigate(path){if(busy){notify('正在处理资料，请完成后再切换页面。');return;}history.pushState({},'',path);if(!workspaceLoaded){boot();return;}path==='/history'?historyPage():path==='/internal-data'?internalPage():home();window.scrollTo(0,0);}

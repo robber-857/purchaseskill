@@ -185,6 +185,12 @@ function updateCoverage(result){
     search.blockedCount=group.filter(i=>i.verification?.status==='blocked'||i.ocr?.status==='blocked').length;
     search.redirectedCount=group.filter(i=>i.verification?.status==='redirected').length;
     search.uncheckedCount=group.filter(i=>!i.verification||i.verification.status==='not_checked').length;
+    const checkedKnown=retained.filter(i=>i.recheckKnownSource&&i.verification?.readable);
+    if(checkedKnown.length&&['failed','partial'].includes(search.status)){
+      search.status='partial';
+      search.reason=(search.error==='检索服务限流'?'关键词检索限流':'关键词检索未全部完成')+'，已重新核实 '+checkedKnown.length+' 个历史商品页';
+      continue;
+    }
     if(search.status==='failed'||search.status==='not_configured')continue;
     if(search.status==='partial'){
       search.reason=search.error==='检索服务限流'?'部分检索已完成，搜索服务限流，尚未完整核对': '部分检索已完成，其余检索暂未成功';
@@ -213,13 +219,46 @@ async function untilDeadline(stopAt,callback){
   },remaining);});
   try{return await Promise.race([callback(controller.signal),timeout]);}finally{clearTimeout(timer);}
 }
+export function includeKnownSources(fresh,previous,targets){
+  if(!previous||fresh.status==='not_configured')return fresh;
+  const active=new Set(targets.map(p=>typeof p==='string'?p:p.name));
+  const items=fresh.items.map(item=>({...item}));
+  const keyOf=i=>JSON.stringify([i.product,productPageKey(i.url)]);
+  const available=new Map(items.filter(i=>isSingleProductURL(i.url)).map(i=>[keyOf(i),i]));
+  const prior=[...(previous.items||[]),...(previous.historyItems||[])].filter(i=>
+    active.has(i.product)&&isSingleProductURL(i.url)&&(i.priceEvidence?.id||i.sourceType==='reviewed_source'||i.verification?.readable));
+  const strength=i=>(i.priceEvidence?.id?4:0)+(i.sourceType==='reviewed_source'?2:0)+(i.verification?.readable?1:0);
+  prior.sort((a,b)=>strength(b)-strength(a)||(Date.parse(b.capturedAt)||0)-(Date.parse(a.capturedAt)||0));
+  const selected=new Set(),counts=new Map();
+  for(const old of prior){
+    const platform=PLATFORMS.find(p=>safeMarketURL(old.url,p.domain));
+    const group=JSON.stringify([old.product,platform.id]),key=keyOf(old);
+    if(selected.has(key)||(counts.get(group)||0)>=2)continue;
+    counts.set(group,(counts.get(group)||0)+1);
+    selected.add(key);
+    const indexed=available.get(key);
+    if(indexed){indexed.recheckKnownSource=true;continue;}
+    // Reuse only the URL and SKU association. All content, including the title, price
+    // and match observations, must be read again from the official page.
+    items.push({product:old.product,platform:platform.name,kind:platform.kind,url:safeMarketURL(old.url),
+      sourceType:'rechecked_source',pageType:'product',capturedAt:fresh.capturedAt,priceMentions:[],
+      title:'',discoveryOnly:true,recheckKnownSource:true});
+  }
+  return {...fresh,items};
+}
 export async function verifyMarketSources(result,{key=process.env.FIRECRAWL_API_KEY,fetcher=fetch,visionReader,saveEvidence,deadline=Infinity}={}){
   if(!key)return result;
   const stopAt=Math.min(deadline,Date.now()+95000);
   const groups=Object.groupBy(result.items.filter(i=>isSingleProductURL(i.url)),i=>JSON.stringify([i.product,i.platform]));
-  const grouped=Object.values(groups).map(items=>[...items].sort((a,b)=>marketRank(b)-marketRank(a)).slice(0,5));
+  const grouped=Object.values(groups).map(items=>{
+    const ranked=[...items].sort((a,b)=>marketRank(b)-marketRank(a));
+    const known=ranked.filter(i=>i.recheckKnownSource),found=ranked.filter(i=>!i.recheckKnownSource);
+    if(!known.length)return ranked.slice(0,5);
+    return [known[0],found[0],known[1],...found.slice(1)].filter(Boolean).slice(0,5);
+  });
   // Round-robin caps avoid giving every screenshot to the first product.
-  const targets=[0,1,2,3,4].flatMap(index=>grouped.map(xs=>xs[index]).filter(Boolean)).slice(0,Math.max(9,grouped.length));
+  const rounds=result.items.some(i=>i.recheckKnownSource)?2:1;
+  const targets=[0,1,2,3,4].flatMap(index=>grouped.map(xs=>xs[index]).filter(Boolean)).slice(0,Math.max(9,grouped.length*rounds));
   const screenshotTargets=new Set(saveEvidence?targets:targets.slice(0,3));
   const ocrTargets=new Set(targets.slice(0, result.products?.length ? Math.min(12, Math.max(3,result.products.length*2)) : 3));
   await pooled(targets,6,async item=>{
