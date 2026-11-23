@@ -45,6 +45,21 @@ test('a refresh rejects products not present in supplier attachments',()=>{
   assert.equal(reportSearchTargets(report,files,first)[0].name,first);
   assert.throws(()=>reportSearchTargets(report,files,second),/不在供应商/);
 });
+
+test('latest automatic discoveries stay separate from earlier screenshots and URL rechecks',()=>{
+  const stamp='2026-11-23T02:00:00Z';
+  const row=(id,extra={})=>({...item(first,id),capturedAt:stamp,priceEvidence:{id:String(id).repeat(64),priceText:'¥30'},...extra});
+  const discovery={discoveryQuery:'site:m.1688.com/offer/ 钛杯 280ml',discoveryURL:'https://m.1688.com/offer/1.html'};
+  const fresh=row(1,{...discovery,title:'本轮独立检索的杯'});
+  const earlier=row(2,{...discovery,title:'以前的自动商品',capturedAt:'2026-11-20T01:00:00Z'});
+  const known=row(3,{title:'人工留档复核的杯',sourceType:'rechecked_source'});
+  const html=marketHTML({version:2,products:[{name:first}],items:[fresh,earlier,known],searches:[
+    {product:first,platform:'1688',capturedAt:stamp,automaticProofCount:1}
+  ]});
+  assert.match(html,/本轮自动找到并留有价格截图：1 个/);
+  const history=html.indexOf('其他已留档商品（2）');
+  assert.ok(html.indexOf('本轮独立检索的杯')<history && html.indexOf('以前的自动商品')>history && html.indexOf('人工留档复核的杯')>history);
+});
 test('interrupted searches retain dated proof and a late response cannot replace a newer SKU refresh',()=>{
   const saved={...item(first,11),priceEvidence:{id:'x'},capturedAt:'2026-11-20'};
   const previous={items:[saved],searches:[{product:first,platform:'1688',capturedAt:'2026-11-20'}]};

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {marketProducts,searchMarket,verifyMarketSources,includeKnownSources,isSingleProductURL,inspectMarketPage,chinaMarketComparison} from '../lib/market.mjs';
+import {marketProducts,searchMarket,researchMarket,verifyMarketSources,includeKnownSources,isSingleProductURL,inspectMarketPage,chinaMarketComparison} from '../lib/market.mjs';
 import {mergeMarketRefresh} from '../lib/market-refresh.mjs';
 import {productPlan,productSimilarity} from '../lib/market-products.mjs';
 
@@ -8,6 +8,34 @@ const ok = data => ({ok:true,json:async()=>({success:true,data})});
 const detail = 'https://detail.1688.com/offer/12345.html';
 const opaque = 'https://www.taobao.com/list/item/UUVf123fooXYZ=.htm';
 const fetchResults = data => async () => ok(data);
+const readTitlePrice = async ({title}) => ({status:'read',offers:[{
+  title,priceText:'￥24',matchesCandidate:true,conditions:'未知'
+}]});
+
+test('a gated listing triggers a fresh search only on the platform missing evidence',async()=>{
+  const opened=[],queries=[];
+  const replacement='https://detail.1688.com/offer/34567.html';
+  const title='迷你纯钛保温杯280ml';
+  const result=await researchMarket([{name:'钛杯',attributes:['280ml']}],{
+    key:'test',deadline:Date.now()+120000,visionReader:readTitlePrice,
+    saveEvidence:async entry=>({id:'proof',priceText:entry.priceText}),
+    fetcher:async(_url,options)=>{
+      const body=JSON.parse(options.body);
+      const secondPass=opened.includes(detail);
+      if(body.query){
+        queries.push({q:body.query,secondPass});
+        const url=body.query.includes('1688')?(secondPass?replacement:detail):opaque;
+        return ok({web:[{url,title}]});
+      }
+      opened.push(body.url);
+      return ok({markdown:body.url===detail?'登录查看价格':'# '+title+'\n¥24',metadata:{url:body.url,title},screenshot:'https://storage.googleapis.com/test.png'});
+    }
+  });
+  assert.deepEqual(opened.sort(),[detail,opaque,replacement].sort());
+  assert.ok(queries.filter(s=>s.secondPass).every(s=>s.q.includes('1688')));
+  assert.deepEqual(result.searches.map(row=>row.automaticProofCount),[1,1]);
+  assert.equal(result.items.find(item=>item.url===replacement).capturedAt,result.capturedAt);
+});
 
 test('search terms for branded bottles and gift sets emphasize physical product features, excluding carton dimensions and quote terms',()=>{
   const files=[{role:'supplier'}], refs=[{source:0,page:2}];
@@ -44,6 +72,33 @@ test('supplier SKUs are independent of a shared keyword; private descriptions an
   assert.ok(unavailable.searches.every(s=>s.status==='not_configured'));
 });
 
+test('indexed mobile offers resolve to the same desktop SKU with first-hand discovery provenance',async()=>{
+  const mobile='https://m.1688.com/offer/71234.html?skuId=998&scm=referral';
+  const result=await searchMarket([{name:'钛杯',attributes:['280ml','可拆卸']}],{key:'test',fetcher:async(_,opts)=>{
+    const {query}=JSON.parse(opts.body);
+    const hits=query==='site:m.1688.com/offer/ 钛杯 280ml'?[{url:mobile,title:'280ml 纯钛双层保温杯'}]:[];
+    return ok({web:hits});
+  }});
+  assert.equal(result.items.length,1);
+  const [item]=result.items;
+  assert.equal(item.url,'https://detail.1688.com/offer/71234.html?skuId=998');
+  assert.equal(item.discoveryURL,mobile);
+  assert.equal(item.discoveryQuery,'site:m.1688.com/offer/ 钛杯 280ml');
+  assert.ok(item.similarity.matched.includes('钛杯'));
+  const scarf=productPlan({name:'礼盒',attributes:['水杯','丝巾','600ml']});
+  const near=productSimilarity(scarf,'围巾与保温杯礼盒');
+  assert.ok(near.score>0);
+  assert.ok(near.missing.includes('丝巾'));
+  assert.equal(productSimilarity(scarf,'围巾保温杯包装盒').score,0);
+  const metallic=productPlan({name:'礼盒',attributes:['水杯','发圈','礼盒','s31603','630ml','吸管']});
+  assert.equal(productSimilarity(metallic,'学生运动塑料水杯630ml吸管杯').score,0);
+  assert.equal(productSimilarity(metallic,'学生户外吸管水杯').score,0);
+  assert.ok(productSimilarity(metallic,'女士630ml不锈钢吸管水杯').score>0);
+  assert.equal(productSimilarity(metallic,'女士1630ml不锈钢吸管水杯').score,0);
+  assert.ok(productSimilarity(metallic,'保温杯雨伞商务礼品套装').score>0);
+  assert.ok(productSimilarity(metallic,'保温杯发绳礼盒').score>productSimilarity(metallic,'女士630ml不锈钢吸管水杯').score);
+});
+
 test('title identity outranks image/price; incompatible varieties, accessories and duplicate generic listings do not count',async()=>{
   const inputs=[{name:'冻顶乌龙茶'},{name:'高山乌龙茶'}];
   const result=await searchMarket(inputs,{key:'test',fetcher:fetchResults({web:[
@@ -57,6 +112,48 @@ test('title identity outranks image/price; incompatible varieties, accessories a
   assert.ok(result.items.every(i=>i.similarity.matched.length>0));
   assert.equal(isSingleProductURL('https://www.taobao.com/list/product/'+opaque.split('/').pop()),false);
   assert.equal(isSingleProductURL('https://detail.1688.com/offer/collection'),false);
+});
+
+test('extended gift search finds official variant hints independently and gates their price on first-hand checks',async()=>{
+  const requests=[];
+  const result=await searchMarket([{name:'随行杯丝巾礼盒',attributes:['600ml','不锈钢']}],{
+    key:'test',platformIds:['1688'],depth:'extended',
+    fetcher:async(_,opts)=>{
+      const body=JSON.parse(opts.body);
+      requests.push(body);
+      if(!body.query.includes('"围巾"'))return ok({web:[]});
+      return ok({web:[
+        {url:detail,title:'高档暖冬商务围巾礼盒',description:'颜色：围巾+保温杯+礼盒，￥19'},
+        {url:'https://m.1688.com/offer/22222.html',title:'空包装盒批发',description:'可放置围巾+保温杯'}
+      ]});
+    }
+  });
+  assert.equal(result.searches.length,1);
+  assert.ok(requests.some(r=>r.limit>12&&r.query.includes('"围巾"')));
+  assert.equal(result.items.length,1);
+  assert.equal(result.items[0].discoveryOnly,true);
+  assert.deepEqual(result.items[0].priceMentions,[]);
+  assert.equal(chinaMarketComparison(result).items.length,0);
+});
+
+test('a gift body can be found by an indexed capacity field, and an official lid field does not discard a complete cup',async()=>{
+  const target={name:'丝巾水杯礼盒',attributes:['600ml','双饮','吸管','不锈钢']};
+  const plan=productPlan(target);
+  assert.ok(productSimilarity(plan,'600ml保温杯双饮带吸管 杯盖类型 弹盖 内胆材质 316不锈钢').score>0);
+  assert.equal(productSimilarity(plan,'600ml保温杯通用双饮杯盖 杯盖类型 弹盖').score,0);
+  const result=await searchMarket([target],{key:'test',platformIds:['1688'],depth:'body',fetcher:async(_,opts)=>{
+    const {query}=JSON.parse(opts.body);
+    if(!query.includes('双饮'))return ok({web:[]});
+    return ok({web:[
+      {url:detail,title:'不锈钢双饮吸管保温杯',description:'容量：600ML 杯盖类型：旋盖'},
+      {url:'https://m.1688.com/offer/22222.html',title:'保温杯',description:'赠品600ml，容量：300ml'},
+      {url:'https://m.1688.com/offer/33333.html',title:'保温杯替换盖',description:'容量：600ml'}
+    ]});
+  }});
+  assert.deepEqual(result.items.map(i=>i.url),[detail]);
+  assert.equal(result.items[0].discoveryOnly,true);
+  assert.equal(result.items[0].similarity.matched.includes('600ml'),true);
+  assert.deepEqual(chinaMarketComparison(result).items,[]);
 });
 
 test('off-domain and list-page hits contribute only explicit official links, with no price until confirmed on detail',async()=>{
@@ -78,7 +175,9 @@ test('off-domain and list-page hits contribute only explicit official links, wit
   assert.equal(item.title,'冻顶乌龙茶叶');
   assert.deepEqual(item.priceMentions,[]);
   assert.equal(item.verification.readable,true);
-  assert.doesNotMatch(JSON.stringify(item),/999|example\.org/);
+  const {discoveryURL,...observations}=item;
+  assert.equal(discoveryURL,'https://example.org/case');
+  assert.doesNotMatch(JSON.stringify(observations),/999|example\.org/);
   assert.equal(result.searches.find(s=>s.platform==='1688').readableCount,1);
 });
 
@@ -88,10 +187,10 @@ test('price screenshots require exact official product and variant, and storage 
   const input={products:[{name:'红茶'}],searches:[{product:'红茶',platform:'淘宝',directCount:1,status:'found'}],items:[item]};
   const screenshot='https://storage.googleapis.com/private-screenshot';
   const captures=[];
-  const verify=(finalURL,saveEvidence)=>verifyMarketSources(structuredClone(input),{key:'test',fetcher:fetchResults({markdown:'# 蜜香工夫红茶\n￥24',screenshot,metadata:{url:finalURL}}),saveEvidence});
+  const verify=(finalURL,saveEvidence)=>verifyMarketSources(structuredClone(input),{key:'test',fetcher:fetchResults({markdown:'# 蜜香工夫红茶\n￥24',screenshot,metadata:{url:finalURL}}),visionReader:readTitlePrice,saveEvidence});
   const saved={id:'stored',version:1};
   const good=await verify(url,async data=>{captures.push(data);return saved;});
-  assert.equal(captures[0].priceText,'￥24');
+  assert.equal(captures[0].priceText,'¥24');
   assert.deepEqual(good.items[0].priceEvidence,saved);
   assert.equal(good.searches[0].verifiedPriceCount,1);
   assert.ok(!JSON.stringify(good).includes(screenshot));
@@ -110,10 +209,13 @@ test('all twelve SKUs get a first platform probe before fallbacks, and a limited
   const calls=[];
   const search=await searchMarket(inputs,{key:'test',fetcher:async(_,opts)=>{
     const {query}=JSON.parse(opts.body);calls.push(query);
-    return query.startsWith('site:1688.com ')||query.startsWith('site:taobao.com ')?ok({web:[]}):{ok:false,status:429};
+    return query.startsWith('site:m.1688.com/offer/ ')||query.startsWith('site:taobao.com/list/item/ ')?ok({web:[]}):{ok:false,status:429};
   }});
   assert.equal(search.searches.length,24);
-  assert.ok(calls.slice(0,24).every(q=>/^site:(1688|taobao)\.com /.test(q)));
+  const firstPass=[...new Set(search.searches.map(s=>s.queries[0]))];
+  assert.ok(firstPass.every(q=>/^site:(?:m\.1688\.com\/offer|taobao\.com\/list\/item)\/ /.test(q)));
+  assert.deepEqual(new Set(calls.slice(0,firstPass.length)),new Set(firstPass));
+  assert.ok(firstPass.every(q=>calls.filter(call=>call===q).length===1));
   assert.equal(search.status,'partial');
   assert.ok(search.searches.every(s=>s.status==='partial'&&s.reason.includes('限流')));
   const timed=await searchMarket(inputs,{key:'test',deadline:Date.now(),fetcher:()=>assert.fail('expired quota should not issue requests')});
@@ -127,7 +229,7 @@ test('verification preserves inspected prices and stops queued SKUs when a slow 
   const result=await verifyMarketSources({items,products,searches:products.map(p=>({product:p.name,platform:'1688',directCount:1,status:'found'}))},{
     key:'test',deadline:Date.now()+550,
     fetcher:async(_,opts)=>{fetches++;const {url}=JSON.parse(opts.body),item=items.find(i=>i.url===url);return ok({markdown:'# '+item.title+'\n￥24',metadata:{url},screenshot:'https://storage.googleapis.com/sample'});},
-    saveEvidence:({signal})=>new Promise(resolve=>signal.addEventListener('abort',()=>resolve(null),{once:true}))
+    visionReader:readTitlePrice,saveEvidence:({signal})=>new Promise(resolve=>signal.addEventListener('abort',()=>resolve(null),{once:true}))
   });
   assert.equal(fetches,6);
   assert.equal(result.items.filter(i=>i.verification.status==='not_checked').length,6);

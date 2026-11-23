@@ -5,7 +5,7 @@ import {CreateSchema,MB,EXTENSIONS,validateFiles,validateManifest,supplierSnapsh
 import * as store from '../lib/store.mjs';
 import {analyze} from '../lib/analyze.mjs';
 import {cachedReview} from '../lib/sample-cache.mjs';
-import {searchMarket,verifyMarketSources,includeKnownSources,inspectProductLinks,safeMarketURL,singlePrice,chinaMarketComparison,MarketInputSchema} from '../lib/market.mjs';
+import {researchMarket,inspectProductLinks,safeMarketURL,singlePrice,chinaMarketComparison,MarketInputSchema} from '../lib/market.mjs';
 import {reportSearchTargets,mergeMarketRefresh,publicMarketItem} from '../lib/market-refresh.mjs';
 import {savePriceEvidence,readPriceEvidence} from '../lib/market-evidence.mjs';
 export const config={maxDuration:300};
@@ -81,7 +81,7 @@ export default async function handler(req,res){
         const cached=process.env.AI_API_KEY&&process.env.AI_MODEL?null:cachedReview(await store.firstFileDigest(job),job.context);
         const result=cached||await analyze(manifest,job.files,(({workspaceId,...context})=>context)(job.context));
         const targets=reportSearchTargets(result.report,job.files,null,job.context.searchKeyword);
-        const found=await verifyMarketSources(await searchMarket(targets,{deadline:marketDeadline}),{deadline:marketDeadline,saveEvidence:data=>savePriceEvidence(job.id,data)});
+        const found=await researchMarket(targets,{deadline:marketDeadline,saveEvidence:data=>savePriceEvidence(job.id,data)});
         const marketComparison=mergeMarketRefresh({},found,targets,targets.map(p=>p.name||p));
         const report={...result.report,marketComparison,mode:result.mode,model:result.model,usage:result.usage,requestId:result.requestId,ruleVersion:result.ruleVersion,createdAt:new Date().toISOString(),files:job.files.map(({name,size,role})=>({name,size,role:role||'supplier'})),coverage:{pages:manifest.pages.length,images:manifest.pages.reduce((n,p)=>n+p.images.length,0),textPages:manifest.pages.filter(p=>p.text.trim()).length},market:job.context.market,purpose:job.context.purpose};
         await store.updateJob(job.id,{status:'completed',report,error:null,lock_until:null});return reply({id:job.id,status:'completed',report:chinaReport(report)});
@@ -110,8 +110,7 @@ export default async function handler(req,res){
       let refreshed,targets,added=[];
       if(refreshing){
         targets=reportSearchTargets(job.report,job.files,input.product,input.keyword||'');
-        const search=await searchMarket(targets,{deadline:marketDeadline});
-        refreshed=await verifyMarketSources(includeKnownSources(search,job.report.marketComparison,targets),options);
+        refreshed=await researchMarket(targets,options,job.report.marketComparison);
       }else if(input.sourceUrls){
         added=await inspectProductLinks(input.sourceUrls,target,options);
       }else if(input.screenshot){

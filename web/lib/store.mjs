@@ -3,6 +3,8 @@ import {resolve} from 'node:path';
 import {createClient} from '@supabase/supabase-js';
 import {randomUUID,createHash} from 'node:crypto';
 import {MB} from './contracts.mjs';
+import {boundedMarketImageBody,maxMarketImageBytes} from './market-capture.mjs';
+export {boundedMarketImageBody,maxMarketImageBytes} from './market-capture.mjs';
 export const cloud=()=>Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY);
 export const bucket='review-private';
 const root=resolve(process.env.LOCAL_DATA_DIR||'.local-data');
@@ -86,22 +88,6 @@ export async function verifyOriginals(job){
 }
 export async function getShared(hash){if(cloud()){const {data,error}=await db().from('review_jobs').select('id,shared_report,share_expires_at').eq('share_hash',hash).maybeSingle();check(error);return data;}return localTransaction(jobs=>{const j=jobs.find(x=>x.share_hash===hash);return j?{id:j.id,shared_report:j.shared_report,share_expires_at:j.share_expires_at}:null;});}
 
-export const maxMarketImageBytes=3*MB;
-export async function boundedMarketImageBody(response){
-  const sizeHint=Number(response.headers.get('content-range')?.split('/')[1]||response.headers.get('content-length'));
-  if(!response.body||sizeHint>maxMarketImageBytes){
-    await response.body?.cancel();
-    return null;
-  }
-  const chunks=[];
-  let size=0;
-  for await(const chunk of response.body){
-    size+=chunk.length;
-    if(size>maxMarketImageBytes)return null;
-    chunks.push(chunk);
-  }
-  return size?Buffer.concat(chunks,size):null;
-}
 function marketImagePath(jobId,digest){
   if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(jobId)||!/^[0-9a-f]{64}$/.test(digest))throw new Error('无效价格凭证');
   return `${jobId}/market-evidence/${digest}`;

@@ -74,19 +74,94 @@ export function productPlan(input) {
   const gift=attributes.includes('礼盒')?'礼盒':'';
   const known=Boolean(kind&&(identity||dimensional));
   const features=specific.filter(t=>t!==kind&&!/^s\d+$/.test(t));
-  const primary = legacy||!known ? label : unique([kind,dimensional,gift,...features.slice(0,3),...other.filter(t=>t!==gift).slice(0,1)]).join(' ');
-  const alternate = unique([kind || label,identity || dimensional, gift, keyword || (identity?'':other[0])]).join(' ').trim();
-  return {name,keyword,attributes,category,terms,legacy,queries:unique([primary,alternate].map(x=>x.trim())).slice(0,2)};
+  const phrase=(...parts)=>unique(parts).join(' ');
+  const accessory=attributes.find(t=>t==='丝巾'||t==='发圈');
+  const use=attributes.find(t=>['吸管','茶水分离','毛圈','加热','袋泡','散茶'].includes(t));
+  // Retail titles rarely contain all the supplier's dimensions, mechanisms and package contents.
+  // Search one identifying axis at a time; other attributes still participate in ranking.
+  const primary = legacy||!known ? label : gift&&accessory ? phrase(kind,gift,accessory)
+    : phrase(kind,dimensional,kind==='钛杯'&&dimensional?'':use||features[0]||identity);
+  const alternate=gift&&accessory ? phrase(kind,dimensional,use) : phrase(kind||label,features[0]||identity||dimensional,gift);
+  const hasMetalCup=category?.[0]==='水杯'&&attributes.some(t=>/不锈钢|^s(?:30408|31603)$|^316l$|钛杯/.test(t));
+  const giftBody=hasMetalCup&&kind==='水杯'?'保温杯':kind;
+  // Distinct search angles for a set: its actual contents, a related accessory, the base item,
+  // and packaged alternatives. Broader search words are never copied into the supplier spec.
+  const giftQueries=gift&&accessory?unique([
+    phrase(giftBody,gift,accessory),phrase(giftBody,gift,accessory==='丝巾'?'围巾':'头绳'),
+    phrase(kind,dimensional,use),phrase(giftBody,dimensional&&'"'+dimensional+'"'),
+    phrase(giftBody,gift,'套装'),primary
+  ]):[];
+  const variants=giftQueries.length?giftQueries:keyword ? [primary,phrase(kind||label,keyword),alternate] : [primary,alternate,phrase(kind||label,dimensional)];
+  if(giftQueries.length&&keyword)variants.splice(1,0,phrase(kind,keyword));
+  const queries=legacy?[label]:unique(variants).filter(query=>query===primary || query!==kind);
+  const relatedAccessory=accessory==='丝巾'?'围巾':'头绳';
+  const packageQueries=gift&&accessory?unique([
+    phrase('"'+giftBody+'"','"'+accessory+'"'),
+    phrase('"'+giftBody+'"','"'+relatedAccessory+'"'),
+    phrase(relatedAccessory,giftBody,'伴手礼'),
+    phrase('"'+relatedAccessory+'+'+giftBody+'"'),
+    phrase(giftBody,accessory,'礼品套装')
+  ]):[];
+  // When a bundle cannot be confirmed, preserve the supplier's target but search its base
+  // product by capacity and material/mechanism. This keeps a single cup labelled as such.
+  const bodyQueries=[];
+  if(gift&&accessory&&category?.[0]==='水杯'&&dimensional){
+    const volume='"'+dimensional+'"';
+    const grade=attributes.find(t=>/^(?:316l|316不锈钢|304不锈钢|纯钛)$/.test(t));
+    const mechanisms=unique([...attributes.filter(t=>['双饮','三饮','茶水分离','可拆卸','宽口','防漏'].includes(t)),use]);
+    if(grade)bodyQueries.push(phrase(giftBody,volume,grade),phrase(giftBody,volume,grade,mechanisms[0]));
+    for(const mechanism of mechanisms.slice(0,2))bodyQueries.push(phrase(giftBody,volume,mechanism));
+    if(dimensional.endsWith('ml'))bodyQueries.push(phrase(giftBody,dimensional.replace('ml','毫升'),mechanisms[0]||grade));
+    bodyQueries.push(phrase(giftBody,volume));
+  }
+  return {name,keyword,attributes,category,terms,legacy,queries,packageQueries,bodyQueries:unique(bodyQueries),companion:gift?accessory:undefined};
+}
+
+// Search indexes often quote one selectable combination while the heading only names a gift.
+// Such navigation hints must be confirmed on the linked official page before publication.
+export function indexedPackageMatch(plan,title,snippet){
+  if(!plan.companion||plan.category?.[0]!=='水杯')return null;
+  const parts=String(snippet||'').split(/[，,；;。|]|\.{2,}/);
+  const accessory=plan.companion==='丝巾'?/丝巾|围巾|方巾|领巾/:/发圈|发绳|头绳/;
+  for(const part of parts){
+    if(part.length>140||!accessory.test(part)||!/[+＋]|套装含|套装内含/.test(part)||!plan.category[1].test(part))continue;
+    const match=productSimilarity(plan,title+' '+part);
+    if(match.score)return match;
+  }
+  return null;
+}
+
+export function indexedBodyMatch(plan,title,snippet){
+  if(!plan.bodyQueries.length||!plan.category[1].test(title))return null;
+  // A query token or an unrelated number in the description is not a product
+  // specification. Accept only the platform's labelled capacity field.
+  const field=String(snippet||'').match(/容量\s*[:：]\s*((?:\d+(?:\.\d+)?\s*(?:ml|毫升|oz)\s*[、，,/]*\s*){1,8})/i)?.[1];
+  if(!field)return null;
+  const match=productSimilarity(plan,title+' '+field);
+  return match.score&&plan.attributes.some(t=>/^\d+(?:\.\d+)?(?:ml|oz)$/.test(t)&&match.matched.includes(t))?match:null;
 }
 
 export function productSimilarity(plan, title) {
   const visible = titleText(title);
   const words = unique([...plan.attributes, ...plan.terms]);
-  const matched = words.filter(t=>visible.includes(titleText(t)));
+  const matched = words.filter(term=>{
+    const value=titleText(term);
+    if(/^\d+(?:\.\d+)?(?:ml|oz|g|kg|mm|cm)$/.test(value)){
+      return new RegExp('(?<![\\d.])'+value.replace('.','\\.')+'(?![a-z])').test(visible);
+    }
+    return visible.includes(value);
+  });
+  // “钛杯” is also written as e.g. “纯钛双层保温杯”. Do not infer a pure titanium body.
+  if(plan.attributes.includes('钛杯')&&!matched.includes('钛杯')&&/(?:纯钛|钛合金|钛金属).{0,16}(?:杯|壶)/.test(visible))matched.push('钛杯');
   const missing = plan.attributes.filter(t=>!matched.includes(t));
+  const relatedScarf=missing.includes('丝巾')&&visible.match(/围巾|领巾|方巾/)?.[0];
+  if(relatedScarf)matched.push(relatedScarf+'配件（与目标丝巾的材质待核）');
   const categoryMatch = Boolean(plan.category?.[1].test(visible));
   const accessory = /(?:配件|替换盖|杯套|杯盖|杯刷|杯托|茶具|空礼盒|包装盒|空盒|标签贴纸|裁剪纸样|衣服配饰|钩织图解)/;
-  const unrelatedAccessory = accessory.test(visible) && !accessory.test(plan.name) && !/(?:附赠|含|带|配|含有)(?:杯套|杯盖|杯刷)/.test(visible);
+  // Official specifications for complete cups label the lid's material/type.
+  // A literal "杯盖" in that field name does not describe the item being sold.
+  const listingIdentity=visible.replace(/杯盖(?:类型|材质|结构|款式|形状|颜色)/g,'');
+  const unrelatedAccessory = accessory.test(listingIdentity) && !accessory.test(plan.name) && !/(?:附赠|含|带|配|含有)(?:杯套|杯盖|杯刷)/.test(visible);
   const exact = Boolean(visible && visible.includes(normalize(withoutNotes(plan.name))));
   const identityConflict=identities.some(pattern=>{
     const wanted=normalize(plan.name).match(pattern)||[];
@@ -100,12 +175,29 @@ export function productSimilarity(plan, title) {
   const categoryOnly=new Set(['水杯','礼盒','保温杯','杯子','茶叶','不锈钢']);
   const required=plan.attributes.filter(t=>!categoryOnly.has(t));
   const namedDetail=matched.some(t=>required.includes(t)||(!categoryOnly.has(t)&&plan.terms.includes(t)));
-  const enoughDetail=!required.length || namedDetail;
+  const enoughDetail=!required.length || namedDetail || Boolean(relatedScarf);
   const titaniumMismatch=plan.attributes.includes('钛杯')&&!/钛|titanium/i.test(visible);
   const substance=plan.category?categoryMatch:matched.some(t=>!/^\d+(?:\.\d+)?(?:ml|cm|mm|kg|g|oz)?$/.test(t))&&(!model||visible.includes(normalize(model)));
   const substantiveMatch=matched.length>0 && enoughDetail && !titaniumMismatch && substance;
-  const related = !unrelatedAccessory && !identityConflict && (exact || substantiveMatch);
+  const sizes=plan.attributes.filter(t=>/^\d+(?:\.\d+)?(?:ml|oz|g|kg)$/.test(t));
+  const sizeHit=sizes.some(t=>matched.includes(t));
+  const targetAccessory=plan.companion;
+  const isCupSet=plan.category?.[0]==='水杯'&&Boolean(targetAccessory);
+  const metalBody=plan.attributes.some(t=>/不锈钢|^s(?:30408|31603)$|^316l$|钛杯/.test(t));
+  const plasticCup=/塑料(?:吸管|随手|保温|随行|运动|水)?杯|tritan|太空杯|冷水壶/.test(visible)&&!/不锈钢|(?:316|304)(?:l|钢)|纯钛|钛合金/.test(visible);
+  const box=/(?:礼盒|礼品套装|伴手礼套装)/.test(visible);
+  const contents=visible.match(/(?:雨伞|折叠伞|晴雨伞|围巾|手套|丝巾|发圈|方巾|眼罩|毛巾|笔记本|钢笔|签字笔)/)?.[0];
+  const companion=targetAccessory&&matched.includes(targetAccessory);
+  if(isCupSet&&box&&!matched.includes('礼盒'))matched.push('礼品套装');
+  if(isCupSet&&box&&contents&&!companion&&!relatedScarf)matched.push('礼盒标题列有'+contents+'（与目标配件不同）');
+  const comparableSet=!isCupSet||Boolean(companion||relatedScarf||sizeHit||(box&&contents));
+  const assortment=/周边集合|商品合集|差价专拍|链接集合|补差价|多款任选/.test(visible);
+  const related=!assortment&&!unrelatedAccessory&&!identityConflict&&!(isCupSet&&metalBody&&plasticCup)&&comparableSet&&
+    (exact||substantiveMatch||(categoryMatch&&isCupSet&&box&&contents));
   // Price and thumbnails cannot promote an unrelated category into a similar product.
-  const score = related ? Math.min(100, 22 + matched.length*10 + (categoryMatch?12:0) + (exact?25:0)) : 0;
+  const specificHits=matched.filter(t=>featurePriority.includes(t)||t==='纯钛').length;
+  const setBonus=isCupSet?(companion?35:relatedScarf?27:box&&contents?15:0):0;
+  const score = related ? Math.min(100, 22 + matched.length*5 + (categoryMatch?10:0) + Math.min(18,specificHits*8)
+    + (sizeHit?20:0) + (box&&plan.attributes.includes('礼盒')?6:0) + setBonus + (exact?25:0)) : 0;
   return {score,matched,missing};
 }

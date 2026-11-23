@@ -130,6 +130,7 @@ function candidateCard(o){
     ${missing.length?`<p class="market-spec"><b>待核规格</b><span>${e(missing.join('、'))}</span></p>`:''}
     <div class="market-links">${evidenceControl(o)}${listingLink(o)}${link(o.url,'查看商品页')}</div>
     <details><summary>报价依据</summary>${checked?`<small>采集于 ${e(checked)}</small>`:''}
+    ${o.discoveryQuery && o.discoveryURL?`<p>自动检索词：${e(o.discoveryQuery)}</p>`:o.sourceType==='rechecked_source'?'<p>从历史商品链接重新核验。</p>':''}
     <p>${e(verificationLabel[o.verification?.status]||'请核对页面中的规格和交易条件。')}</p>
     ${o.ocr?.offers?.length===1?`<p>${e([o.ocr.offers[0].specification,o.ocr.offers[0].unit,o.ocr.offers[0].conditions].filter(Boolean).join(' · '))}</p>`:''}
     ${marketCoverURLs(o).length?link(o.imageSourceURL||o.url,'查看图片来源'):''}</details></div></article>`;
@@ -178,8 +179,13 @@ function productGroups(m,items,editable){
         const why=s?.reason||searchState[s?.status]||(s?'本次没有可展示的单品':'尚未逐款检索');
         const confirmed=m?.version===2?found.filter(i=>i.priceEvidence?.id):found;
         const leads=found.filter(i=>!confirmed.includes(i));
+        const tracked=Number.isInteger(s?.automaticProofCount) && !s.reviewed;
+        const fresh=tracked?confirmed.filter(i=>i.capturedAt===s.capturedAt && i.discoveryQuery && i.discoveryURL && ['marketplace','linked_detail'].includes(i.sourceType)):confirmed;
+        const saved=tracked?confirmed.filter(i=>!fresh.includes(i)):[];
         return `<div class="platform-column"><h4 class="platform-heading"><span>${e(p.name)} <small>${p.id==='1688'?'批发':'零售'}</small></span><small>${found.length} 个公开候选</small></h4>
-        ${confirmed.length?confirmed.map(candidateCard).join(''):`<p class="platform-empty">${e(leads.length?'尚无带价格截图的匹配商品。':why)}</p>`}
+        ${tracked?`<p class="market-coverage">本轮自动找到并留有价格截图：${fresh.length} 个</p>`:''}
+        ${fresh.length?fresh.map(candidateCard).join(''):`<p class="platform-empty">${e(tracked&&why?why:leads.length?'尚无带价格截图的匹配商品。':why)}</p>`}
+        ${saved.length?`<details><summary>其他已留档商品（${saved.length}）</summary>${saved.map(candidateCard).join('')}</details>`:''}
         ${leads.length?`<details><summary>待核商品线索（${leads.length}）</summary>${leads.map(candidateCard).join('')}</details>`:''}
         ${s?.capturedAt?`<small class="market-checked">最近检索 ${e(dateText(s.capturedAt))}</small>`:''}</div>`;
       }).join('')}</div></section>`;
