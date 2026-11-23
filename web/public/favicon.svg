@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="8" fill="#245441"/><text x="32" y="44" text-anchor="middle" fill="white" font-size="38" font-family="sans-serif">选</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#143749"/>
+  <path d="m7 11 9-4 9 4-9 4-9-4Z" fill="#fff"/>
+  <path d="m7 15.2 9 4 9-4M7 19.3l9 4 9-4" fill="none" stroke="#a6dae0" stroke-width="2.2" stroke-linejoin="round"/>
+</svg>

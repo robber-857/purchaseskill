@@ -1,0 +1,172 @@
+/* The workspace frame stops at the page edge. Print keeps its own folio grid. */
+@media screen {
+  .report-view, .export-body {
+    --reader-ink: #192f3a;
+    --reader-blue: #18596b;
+    --reader-muted: #516770;
+    --reader-line: #d6e1e3;
+  }
+  html:has(#app.report-view), #app.report-view, .export-body {
+    background: #f1f4f5;
+  }
+  .report-view .report-toolbar {
+    min-height: 60px;
+    padding-inline: clamp(16px, 2.6vw, 42px);
+    border-color: var(--reader-line);
+    background: #fffffffa;
+  }
+  .report-view .audience-tabs {
+    flex-wrap: nowrap;
+    border: 1px solid #dce5e7;
+    border-radius: 8px;
+    padding: 3px;
+    background: #f1f5f5;
+  }
+  .report-view .audience-tabs button {
+    min-height: 32px;
+    padding: 5px 13px;
+    color: var(--reader-muted);
+    font-size: 12px;
+  }
+  .report-view .audience-tabs button.active {
+    border-radius: 5px;
+    background: #fff;
+    box-shadow: 0 1px 3px #1d404321, inset 0 0 0 1px #d2dfe1;
+    color: var(--reader-blue);
+    font-weight: 650;
+  }
+  .report-view .report-toolbar .reader-actions { flex-wrap: nowrap; gap: 6px; }
+  .reader-actions svg { width: 16px; height: 16px; flex: none; }
+  .report-view .reader-actions :is(.primary, .secondary) {
+    min-height: 36px;
+    gap: 7px;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 550;
+  }
+  .report-view .reader-actions .secondary {
+    background: #fff;
+    border-color: #d7e2e4;
+    color: #354e58;
+  }
+  .report-view .reader-actions .secondary:hover { background: #f0f5f5; }
+  .report-view .reader-actions .primary, .report-view .flow-panel .primary { background: var(--reader-blue); }
+  .report-view .reader-actions .primary:hover, .report-view .flow-panel .primary:hover { background: #104655; }
+  .report-view :is(a, button, summary):focus-visible,
+  .export-body :is(a, summary):focus-visible { outline-color: #247b8e; }
+
+  .report-wrap .report-document, .export-body .report-document {
+    --paper: #fff;
+    --ink: var(--reader-ink);
+    --green: var(--reader-blue);
+    --muted: var(--reader-muted);
+    --line: var(--reader-line);
+    --tint: #edf4f5;
+    --supplier-paper: #fff;
+    --supplier-tint: #edf4f5;
+    --supplier-rule: #b3613c;
+    background: var(--paper);
+  }
+  .report-wrap > .report-document, .export-body > .report-document {
+    box-shadow: 0 2px 8px #19334205;
+  }
+  .report-wrap .brief-document, .export-body .brief-document {
+    border-top: 3px solid #245367;
+  }
+  .brief-document .buyer-folio .report-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--reader-blue);
+  }
+  .brief-document .buyer-folio .report-kicker::before {
+    content: "";
+    width: 24px;
+    height: 2px;
+    background: currentColor;
+  }
+  .brief-document .buyer-cover h1, .supplier-document .supplier-cover h1 { color: var(--reader-ink); }
+  .buyer-scope b, .brief-document .priority-list li::before { color: var(--reader-blue); }
+  .brief-document > .decision-spread {
+    border-radius: 4px;
+    background: #153c4a;
+  }
+  .brief-document .decision-action { background: #eaf2f3; }
+  .brief-document .decision-action a { text-decoration-color: #8ababf; }
+  .brief-document .decision-spread .decision-copy p { color: #ecf3f4; }
+  .brief-document .price-insight, .brief-document .data-needed { border-left-color: #49808b; }
+  .brief-document .range-price-table th, .supplier-document .reading-table th { background: #f0f5f5; }
+  .brief-document .product-group > h3 { border-color: #a4bcc0; }
+  .brief-document .dimension-track { background: #e4edef; }
+  .brief-document .dimension-track > span { background: #387785; }
+  .supplier-document .supplier-decision { background: #f2f5f4; }
+  .supplier-cover-plate { border-color: #d2dddf; background: #f1f5f5; }
+  .supplier-product-jump { text-decoration-color: #9db7bb; }
+
+  .brief-document .market-summary-link { color: var(--reader-ink); border-color: var(--reader-line); }
+  .market-summary-link > b, .market-product-heading .market-card-price { color: var(--reader-blue); }
+  .market-section .market-metrics {
+    padding: 14px clamp(12px, 2vw, 23px);
+    border: 1px solid var(--reader-line);
+    border-radius: 6px;
+    background: #f4f7f7;
+  }
+  .market-metrics dd, .market-product-heading .market-card-price {
+    font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+    letter-spacing: -.025em;
+    font-variant-numeric: tabular-nums;
+    font-weight: 620;
+  }
+  .market-sku .market-sku-head { border-top: 1px solid #9bb1b7; }
+  .platform-column .platform-heading { background: #eaf2f3; color: #25535d; border-color: #b9cdd0; }
+  .platform-column:nth-child(2) .platform-heading { background: #f6f1eb; color: #725538; border-color: #d9cdbd; }
+  .market-sku :is(.market-card, .market-text-card) { border-color: var(--reader-line); border-radius: 6px; }
+  .market-sku .market-product-heading h4 a:hover { color: var(--reader-blue); text-decoration: underline; }
+  .market-card .market-card-copy .market-links { align-items: center; gap: 5px 12px; }
+  .market-card-copy .market-links :is(a, button) { color: var(--reader-blue); }
+  .market-card .market-links :is(.proof-open, .offline-proof-open) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 31px;
+    padding: 4px 9px;
+    border: 1px solid #ccdcde;
+    border-radius: 4px;
+    background: #f1f6f6;
+    color: var(--reader-blue);
+    font-weight: 625;
+    text-decoration: none;
+  }
+  .market-card .market-links :is(.proof-open, .offline-proof-open):hover { background: #e1eeee; }
+  .market-spec b { color: #3d5963; }
+  .report-view .market-refresh { border-color: #bbced1; color: var(--reader-blue); }
+  .market-section .listing-record, .report-view .market-editor {
+    border-color: var(--reader-line);
+    border-radius: 6px;
+    background: #f8fafb;
+  }
+  body:has(.report-view) :is(.market-proof-dialog, .market-print-options) {
+    border-color: #d4e0e2;
+    border-radius: 8px;
+    color: #192f3a;
+    box-shadow: 0 12px 60px #152e3833;
+  }
+  .market-proof-dialog header { gap: 8px; border-bottom: 1px solid #dbe4e6; }
+  .market-proof-dialog header .secondary, .market-print-options .secondary {
+    border-color: #c7d6d9;
+    color: #254a56;
+  }
+  .market-print-options .primary { background: #18596b; }
+}
+@media screen and (max-width: 600px) {
+  .report-view .report-toolbar { padding: 6px 10px; min-height: 50px; gap: 5px; }
+  .report-view .audience-tabs button { padding-inline: 9px; }
+  .report-view .report-toolbar .reader-actions { gap: 3px; }
+  .report-view .reader-actions .secondary { width: 36px; padding-inline: 7px; }
+  .reader-actions .secondary span { display: none; }
+  .market-card .market-links :is(.proof-open, .offline-proof-open) { min-height: 40px; }
+}
+@media screen and (max-width: 380px) {
+  .report-view .reader-actions .primary { width: 36px; padding-inline: 7px; }
+  .reader-actions .primary span { display: none; }
+}
