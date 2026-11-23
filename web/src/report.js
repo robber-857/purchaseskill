@@ -14,33 +14,48 @@ const decisions={
 const amount=(n,currency)=>`${escape(currency)} ${new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(n)}`;
 const heading = (title, subtitle = '') => `<div class="section-heading"><h2>${escape(title)}</h2>${subtitle ? `<p>${escape(subtitle)}</p>` : ''}</div>`;
 const readingLinks = (items, className = '') => `<nav class="reading-links ${className}" aria-label="报告快速导航">${items.map(([id, label]) => `<a href="#${id}">${label}</a>`).join('')}</nav>`;
-function citation(e,r,interactive){
+function citation(e,r,interactive,pageOnly=false){
   const name=r.files?.[e.source]?.name||'来源文件';
   const unit=/\.(ppt|txt|docx|xlsx?|csv)$/i.test(name)?'片段':'页';
   const location=unit==='片段' ? `片段 ${e.page}` : `第 ${e.page} 页`;
   const source=`${escape(name)} · ${location}`;
+  const label=pageOnly || (interactive && r.files?.length===1) ? location : source;
   return interactive
-    ? `<button class="citation" data-source="${e.source}" data-page="${e.page}" type="button" title="${source}" aria-label="查看 ${source}">${r.files?.length===1 ? location : source} ↗</button>`
-    : `<span class="citation">${source}</span>`;
+    ? `<button class="citation" data-source="${e.source}" data-page="${e.page}" type="button" title="${source}" aria-label="查看 ${source}">${label} ↗</button>`
+    : `<span class="citation">${label}</span>`;
+}
+function sourceNotes(items, report, interactive) {
+  const groups = new Map();
+  for (const entry of items || []) {
+    if (!groups.has(entry.source)) groups.set(entry.source, new Map());
+    groups.get(entry.source).set(entry.page, entry);
+  }
+  return Array.from(groups, ([source, pages]) => {
+    const links = Array.from(pages.values(), ref => citation(ref, report, interactive, true));
+    return `<span class="source-note"><span class="source-note-file">${escape(report.files?.[source]?.name || '来源文件')}</span> ${links.join(' ')}</span>`;
+  }).join(' ');
 }
 function supplierImage(image,name){
  if(!image?.data||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(image.data))return '<div class="supplier-image-empty">供应商资料未提供可确认的对应产品图</div>';
  let w=1000,h=1000;try{const b=Uint8Array.from(atob(image.data.split(',')[1]),c=>c.charCodeAt(0));if(b[0]===137){const v=new DataView(b.buffer);w=v.getUint32(16);h=v.getUint32(20);}else if(b[0]===255){for(let i=2;i<b.length-9;){if(b[i]!==255)break;const marker=b[i+1],len=b[i+2]*256+b[i+3];if([192,193,194].includes(marker)){h=b[i+5]*256+b[i+6];w=b[i+7]*256+b[i+8];break;}if(len<2)break;i+=len+2;}}}catch{}
- return `<svg class="supplier-product-image" viewBox="${image.x*w} ${image.y*h} ${image.width*w} ${image.height*h}" role="img" aria-label="${escape(name)} · 供应商资料产品图"><image href="${escape(image.data)}" width="${w}" height="${h}"/></svg>`;
+ // Clip at the source rectangle before fitting the crop into a differently shaped frame.
+ const width=image.width*w, height=image.height*h;
+ return `<svg class="supplier-product-image" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(name)} · 供应商资料产品图"><svg width="${width}" height="${height}" viewBox="${image.x*w} ${image.y*h} ${width} ${height}" overflow="hidden"><image href="${escape(image.data)}" width="${w}" height="${h}"/></svg></svg>`;
 }
 function supplierReviewSections(review) {
   if (!review?.products?.length) return '';
   const retail = value => /^\d+(?:\.\d+)?$/.test(value) ? value + '（币种待确认）' : value;
   const groups = ['建议样品评估', '先补资料再评估', '第二阶段讨论'];
+  const productId = product => 'supplier-product-' + (review.products.indexOf(product) + 1);
   const quoteRows = review.products.map(p => `<tr>
-    <td><strong>${escape(p.name)}</strong><small>${escape(p.specification)}</small></td>
+    <td><strong><a class="supplier-product-jump" href="#${productId(p)}">${escape(p.name)}</a></strong><small>${escape(p.specification)}</small></td>
     <td data-label="供货报价">${escape(p.quote)}</td><td data-label="建议零售价">${escape(retail(p.retail))}</td>
     <td data-label="报价条件">${escape(p.conditions)}<details><summary>查看报价原文</summary>${escape(p.quoteEvidence)}</details></td>
     </tr>`).join('');
   const groupsHTML = groups.map(label => {
     const products = review.products.filter(p => p.recommendation === label);
     if (!products.length) return '';
-    return `<div class="product-group"><h3>${label}</h3><div class="supplier-product-grid">${products.map(p => `<article class="supplier-product-card">
+    return `<div class="product-group"><h3>${label}<span>${products.length} 款</span></h3><div class="supplier-product-grid">${products.map(p => `<article class="supplier-product-card" id="${productId(p)}">
       ${p.image ? supplierImage(p.image, p.name) : ''}<div><h4>${escape(p.name)}</h4>
       <p class="supplier-repeat-detail">${escape(p.specification)}</p><p>${escape(p.reason)}</p>
       <h5>推进条件</h5>${list(p.requirements)}</div></article>`).join('')}</div></div>`;
@@ -49,21 +64,28 @@ function supplierReviewSections(review) {
   return `<section id="supplier-price">${heading('报价摘要','请按型号确认币种、计价单位与报价条件')}
     <div class="table-scroll"><table class="supplier-quote-table reading-table"><thead><tr><th>产品与规格</th><th>供货报价</th><th>建议零售价</th><th>报价条件</th></tr></thead><tbody>${quoteRows}</tbody></table></div></section>
     <section id="supplier-products" class="supplier-recommendations">${heading('逐款产品建议')}${groupsHTML}</section>
-    ${opportunities.length ? `<section>${heading('合作机会')}${opportunities.map(o => `<article class="analysis-row"><h3>${escape(o.title)}</h3><p>${escape(o.detail)}</p></article>`).join('')}</section>` : ''}`;
+    ${opportunities.length ? `<section class="supplier-opportunities">${heading('合作机会')}${opportunities.map(o => `<article class="analysis-row"><h3>${escape(o.title)}</h3><p>${escape(o.detail)}</p></article>`).join('')}</section>` : ''}`;
 }
 function supplierHTML(r) {
   const review = r.supplierReview;
   const products = r.supplierProducts || [];
-  const links = [...(review?.products?.length ? [['supplier-price','查报价'],['supplier-products','看选款建议']] : []),
-    ...(products.length ? [['supplier-samples','核对样品']] : []), ['supplier-reply','准备回复']];
+  const links = [...(review?.products?.length ? [['supplier-price','报价摘要'],['supplier-products','逐款建议']] : []),
+    ...(products.length ? [['supplier-samples','规格与样品']] : []), ['supplier-reply','回复清单']];
   const groups = review?.requestGroups || [];
   const requests = groups.length ? `<div class="supplier-request-groups">${groups.map(g => `<div><h3>${escape(g.category)}</h3>${list(g.items)}</div>`).join('')}</div>` : list(r.missing);
-  const subjects = (review?.products || products).map(p => p.name);
-  const subject = subjects.slice(0,2).join('、') + (subjects.length > 2 ? `等 ${subjects.length} 款` : '');
+  const productCount = (review?.products || products).length;
+  const coverProduct = review?.products?.find(p => p.image?.data);
+  const created = new Date(r.createdAt);
+  const date = Number.isNaN(created.getTime()) ? '' : created.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',timeZone:'Australia/Sydney'});
   const scope = (r.limitations || []).filter(t => t !== '本版不含内部库存、成本、采购底价、评分与竞品分析。');
   return `<article class="report-document supplier-document">
-    <header class="report-masthead"><p class="report-kicker">供应商沟通</p><h1>${escape(r.title)}</h1><p class="report-meta">${escape(new Date(r.createdAt).toLocaleDateString('zh-CN',{timeZone:'Australia/Sydney'}))}${subject ? ' · ' + escape(subject) : ''}</p></header>
-    <section class="supplier-decision"><h2>${review ? '本轮合作建议' : '本轮需确认的事项'}</h2><p>${escape(r.summary)}</p></section>
+    <header class="report-masthead supplier-cover">
+      <div class="supplier-cover-copy"><p class="report-kicker">供应商沟通</p><h1>${escape(r.title)}</h1>
+        <p class="report-meta">${date ? `<time datetime="${created.toISOString()}">${escape(date)}</time>` : ''}${productCount ? `<span>${productCount} 款候选产品</span>` : ''}</p>
+      </div>
+      ${coverProduct ? `<figure class="supplier-cover-plate">${supplierImage(coverProduct.image,coverProduct.name)}<figcaption>${escape(coverProduct.name)}</figcaption></figure>` : ''}
+    </header>
+    <section class="supplier-decision" id="supplier-overview"><h2>${review ? '本轮合作建议' : '本轮需确认的事项'}</h2><p>${escape(r.summary)}</p></section>
     ${readingLinks(links)}${supplierReviewSections(review)}
     ${products.length ? `<section id="supplier-samples" class="supplier-followup">${heading('规格确认与样品要求')}
       <div class="table-scroll"><table class="supplier-followup-table reading-table"><thead><tr><th>候选产品</th><th>待确认规格与资料</th><th>逐款样品要求</th></tr></thead>
@@ -74,7 +96,7 @@ function supplierHTML(r) {
     <footer>选品有据 · 供应商沟通</footer></article>`;
 }
 function detailedReportHTML(r,{interactive=true}={}){
-  const cite=x=>citation(x,r,interactive),refs=xs=>(xs||[]).map(cite).join(' ');
+  const cite=x=>citation(x,r,interactive),refs=xs=>sourceNotes(xs,r,interactive);
   const score=scoreAssessment(r),economics=economicsSummary(r),assessment=r.assessment;
   const resale=r.purpose==='转售商品';
   const skuRows=assessment?.skuImpact.rows||[];
@@ -116,31 +138,42 @@ function readableBasicReport(r) {
     risks:r.risks.map(x => ({...x,detail:readable(x.detail)})),evidence:r.evidence.map(x => ({...x,limitation:readable(x.limitation)})),
     missing:r.missing.map(readable),nextSteps:r.nextSteps.map(readable),limitations:r.limitations.map(readable)};
 }
+function buyerCover(r) {
+  const issued = new Date(r.createdAt);
+  const date = Number.isFinite(issued.getTime()) ? issued.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',timeZone:'Australia/Sydney'}) : '';
+  const productCount = r.assessment?.rangeReview?.products?.length || r.products.length;
+  const product = r.supplierReview?.products?.find(p => p.image?.data && r.files?.[p.image.source]?.role !== 'internal');
+  const scope = [[productCount, '款候选产品'], [r.evidence.length, '条评审证据']].filter(([count]) => count > 0);
+  return `<header class="report-masthead buyer-cover">
+    <div class="buyer-folio"><p class="report-kicker">买方内部评审</p>${date ? `<time datetime="${issued.toISOString()}">评审日期 · ${escape(date)}</time>` : ''}</div>
+    <div class="buyer-cover-body"><div class="buyer-cover-title"><h1>${escape(r.title)}</h1>
+      <p class="report-meta">${[r.purpose, r.market, modes[r.mode]].filter(Boolean).map(value => `<span>${escape(value)}</span>`).join('')}</p></div>
+      ${product ? `<figure class="buyer-cover-plate">${supplierImage(product.image, product.name)}<figcaption>${escape(product.name)}</figcaption></figure>` : scope.length ? `<div class="buyer-scope">${scope.map(([count,label]) => `<div><b>${count}</b><span>${label}</span></div>`).join('')}</div>` : ''}
+    </div></header>`;
+}
 export function reportHTML(report, {interactive = true, marketEditable = false} = {}) {
   if (report.mode === 'supplier') return supplierHTML(report);
   const r = report.mode === 'basic' ? readableBasicReport(report) : report;
   const brief = r.assessment?.brief;
   const decision = decisions[r.decision] || decisions['待补资料'];
   const cite = x => citation(x, r, interactive);
-  const refs = items => (items || []).map(cite).join(' ');
-  const range = rangeSections(r, {escape, heading, citation:cite});
+  const refs = items => sourceNotes(items, r, interactive);
+  const range = rangeSections(r, {escape, heading, citation:cite, sources:refs});
   const economics = economicsSummary(r);
   const base = economics?.scenarios.find(s => s.name === '基准');
-  const date = new Date(r.createdAt).toLocaleDateString('zh-CN', {timeZone:'Australia/Sydney'});
   const price = brief?.price;
   const comparison=marketForReport(r);
   const next = brief?.nextAction || r.nextSteps[0];
   const priorities = brief?.priorities;
-  const links = [['priorities','看关键问题'],['price','查报价'],['requirements','看补件清单'],['actions','看推进步骤']];
+  const links = [['priorities','关键问题'],['price','报价摘要'],['candidates','候选产品'],['requirements','补充资料'],['actions','推进步骤']];
   return `<article class="report-document brief-document">
-    <header class="report-masthead"><p class="report-kicker">买方内部评审</p><h1>${escape(r.title)}</h1>
-    <p class="report-meta">${[date,r.purpose,r.market,modes[r.mode]].filter(Boolean).map(escape).join(' · ')}</p></header>
+    ${buyerCover(r)}
     <section id="overview" class="decision-banner decision-spread ${decision.tone}">
       <div class="decision-copy"><span class="decision-eyebrow">采购建议</span><h2>${decision.label}</h2><p>${escape(brief?.takeaway || r.summary)}</p></div>
-      <div class="decision-action"><h3>现在先做什么</h3><p>${escape(next)}</p><a href="#requirements">查看补件清单 ↓</a></div></section>
+      <div class="decision-action"><h3>下一步</h3><p>${escape(next)}</p><a href="#requirements">查看补件清单 ↓</a></div></section>
     ${readingLinks(links,'internal-reading-links')}${coverageSummary(comparison)}
     <section id="priorities">${heading(priorities?.length ? '最影响采购决定的事' : '需核对的问题')}
-      ${priorities?.length ? `<ol class="priority-list">${priorities.map(x => `<li><h3>${escape(x.title)}</h3><p>${escape(x.why)}</p><p class="priority-action"><strong>建议</strong> ${escape(x.action)}</p>${refs(x.refs)}</li>`).join('')}</ol>`
+      ${priorities?.length ? `<ol class="priority-list">${priorities.map(x => `<li><h3>${escape(x.title)}</h3><div><p>${escape(x.why)}</p><p class="priority-action"><strong>建议</strong> ${escape(x.action)}</p>${refs(x.refs)}</div></li>`).join('')}</ol>`
         : r.risks.length ? r.risks.map(x => `<article class="analysis-row"><h3>${escape(x.title)}</h3><p>${escape(x.detail)}</p></article>`).join('') : '<p>尚无已记录的问题，请核对采购需求与资料。</p>'}
     </section>
     <section id="price" class="brief-price">${heading('报价摘要')}${range.priceTable}

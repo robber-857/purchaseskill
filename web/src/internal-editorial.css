@@ -1,0 +1,284 @@
+/* The printed brief and the on-screen reader share the same paper and hierarchy. */
+.report-document.brief-document {
+  --paper: #fffefb;
+  --ink: #142743;
+  --green: #2946a6;
+  --muted: #536174;
+  --line: #d7dce1;
+  --tint: #edf1fb;
+  --ochre: #ad7428;
+  --display: "STIX Two Text", Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--ink);
+  padding: 0 clamp(18px, 3vw, 44px) 24px;
+}
+.brief-document .buyer-cover {
+  padding: 15px 0 18px;
+}
+.buyer-folio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+.brief-document .buyer-folio .report-kicker, .buyer-folio time {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.brief-document .buyer-folio .report-kicker {
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: .075em;
+}
+.buyer-folio time, .buyer-scope b, .brief-document table {font-variant-numeric: tabular-nums;}
+.buyer-cover-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(12px, 3vw, 40px);
+  min-height: 140px;
+  padding-top: 18px;
+}
+.buyer-cover-title {flex: 1; min-width: 0;}
+.brief-document .buyer-cover h1 {
+  margin: 0;
+  font: 700 clamp(30px, 3.3vw, 54px)/1.22 var(--display);
+  letter-spacing: -.035em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.buyer-cover .report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 0;
+  margin: 16px 0 0;
+  color: var(--muted);
+}
+.buyer-cover .report-meta span {line-height: 1.4;}
+.buyer-cover .report-meta span + span {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid #aeb8c5;
+}
+.buyer-cover-plate {
+  flex: 0 1 210px;
+  min-width: 96px;
+  margin: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+  text-align: center;
+}
+.buyer-cover-plate .supplier-product-image {
+  display: block;
+  width: 100%;
+  height: 108px;
+  background: transparent;
+  border: 0;
+  margin: 0;
+}
+.buyer-cover-plate figcaption {
+  margin: 6px auto 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.buyer-scope {
+  display: flex;
+  gap: clamp(14px, 2vw, 30px);
+  flex-shrink: 0;
+  padding-left: clamp(12px, 2vw, 28px);
+  border-left: 1px solid var(--line);
+}
+.buyer-scope b {
+  display: block;
+  font: 500 clamp(34px, 3.5vw, 56px)/1 var(--display);
+  color: #2946a6;
+}
+.buyer-scope span {color: var(--muted); font-size: 12px; line-height: 1.6;}
+.brief-document > .decision-banner.decision-spread {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  background: var(--ink);
+  border-radius: 0;
+}
+.brief-document .decision-spread .decision-copy,
+.brief-document .decision-spread .decision-action {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: clamp(18px, 2vw, 29px);
+}
+.brief-document .decision-spread .decision-copy h2 {
+  color: #fff;
+  font: 650 clamp(21px, 2.1vw, 32px)/1.35 var(--display);
+  letter-spacing: -.018em;
+  margin: 8px 0;
+}
+.brief-document .decision-copy .decision-eyebrow,
+.brief-document .decision-action h3 {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: .05em;
+  font-weight: 650;
+}
+.brief-document .decision-eyebrow {color: #f0c685;}
+.brief-document .decision-spread.sample .decision-eyebrow {color: #bcd8dd;}
+.brief-document .decision-spread.reject .decision-eyebrow {color: #ffc9ba;}
+.brief-document .decision-spread .decision-copy p {color: #e4eaf3; line-height: 1.8;}
+.brief-document .decision-action {background: var(--tint);}
+.brief-document .decision-action h3 {color: var(--green);}
+.brief-document .decision-action p {
+  color: var(--ink);
+  margin: 8px 0 5px;
+  line-height: 1.8;
+}
+.brief-document .decision-action a {
+  color: var(--green);
+  font-weight: 650;
+  text-decoration-color: #8196d5;
+}
+.brief-document .internal-reading-links {gap: 0 20px; border-color: var(--line);}
+.brief-document .internal-reading-links a {color: var(--ink);}
+.brief-document > section:not(.decision-spread) {padding: clamp(23px, 2.6vw, 38px) 0;}
+.brief-document > section > .section-heading {
+  margin-bottom: 16px;
+  align-items: baseline;
+}
+.brief-document > section:not(.decision-spread) > .section-heading h2,
+.brief-document > .price-proof-appendix > h2 {
+  font: 650 clamp(21px, 2vw, 30px)/1.35 var(--display);
+  color: var(--ink);
+  letter-spacing: -.018em;
+}
+.brief-document .priority-list li {
+  display: grid;
+  grid-template-columns: minmax(140px, .75fr) minmax(0, 1.7fr);
+  gap: 8px 24px;
+  padding: 15px 0 16px 33px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+.brief-document .priority-list li::before {
+  top: 16px;
+  color: var(--green);
+  font: 500 17px/1.6 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.brief-document .priority-list h3 {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.65;
+  margin: 0;
+}
+.brief-document .priority-list p,
+.brief-document .product-rows p,
+.brief-document .analysis-row p,
+.brief-document .brief-portfolio p,
+.brief-document .requirement-list li, .brief-document .range-steps p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.brief-document .priority-list .priority-action {color: var(--ink); margin-top: 5px;}
+.brief-document .priority-action strong, .brief-document .range-condition strong {color: var(--green);}
+.brief-document .source-note {display: block; margin-top: 6px; line-height: 1.5;}
+.brief-document .source-note-file {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 5px;
+  overflow-wrap: anywhere;
+}
+.brief-document .citation {
+  color: var(--green);
+  margin: 0 4px 0 0;
+  font-size: 11px;
+}
+.brief-document .range-price-table {width: 100%; color: var(--ink);}
+.brief-document .range-price-table th {
+  background: #edf0f5;
+  color: var(--ink);
+  border-top: 2px solid var(--ink);
+  font-size: 12px;
+}
+.brief-document .range-price-table td {vertical-align: top; font-size: 13px;}
+.brief-document .range-price-table td small {color: var(--muted);}
+.brief-document .product-group > h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--green);
+  border-bottom: 1px solid #9baacc;
+}
+.brief-document .group-count {font-size: 12px; font-weight: 400; color: var(--muted);}
+.brief-document .price-insight, .brief-document .data-needed {
+  background: var(--tint);
+  color: var(--ink);
+  border-left: 3px solid #576fc2;
+  border-radius: 0;
+}
+.brief-document .price-comparison span, .brief-document .brief-facts span {color: var(--muted);}
+.brief-document .report-appendix {border-top: 2px solid var(--ink); margin-top: 0;}
+.brief-document .report-appendix > summary, .brief-document details summary {color: var(--green);}
+.brief-document .report-appendix > summary > span {font-size: 16px; color: var(--ink);}
+.brief-document .range-steps li {background: transparent; border-radius: 0; border-color: var(--line);}
+.brief-document .dimension-track {background: #dae1ed;}
+.brief-document .dimension-track > span {background: #5069b8;}
+.brief-document .scenario.baseline {background: var(--tint);}
+.brief-document > footer {color: var(--muted);}
+.brief-document :is(a,button,summary):focus-visible {outline: 2px solid #2b4cc2; outline-offset: 3px;}
+@container report-content (max-width: 680px) {
+  .buyer-cover-body {gap: 14px; min-height: 100px;}
+  .buyer-cover-plate {flex-basis: 124px; padding-left: 12px;}
+  .buyer-cover-plate .supplier-product-image {height: 78px;}
+  .brief-document > .decision-banner.decision-spread {grid-template-columns: 1fr;}
+  .brief-document .priority-list li {grid-template-columns: 1fr; gap: 5px;}
+}
+@container report-content (max-width: 460px) {
+  .buyer-cover-body {align-items: flex-start; flex-wrap: wrap; padding-top: 16px;}
+  .buyer-cover-title {flex-basis: 65%;}
+  .brief-document .buyer-cover h1 {font-size: 29px;}
+  .buyer-cover-plate {flex: 1 1 70px; min-width: 66px;}
+  .buyer-cover-plate figcaption {font-size: 10px;}
+  .buyer-scope {border: 0; padding: 0; flex-basis: 100%; gap: 16px;}
+  .buyer-scope > div {display: flex; gap: 4px; align-items: baseline;}
+  .buyer-scope b {font-size: 20px;}
+  .buyer-cover .report-meta {margin-top: 10px;}
+  .brief-document .decision-spread .decision-copy, .brief-document .decision-spread .decision-action {padding: 16px;}
+  .brief-document .priority-list p, .brief-document .priority-list h3 {font-size: 14px;}
+  .brief-document .internal-reading-links {column-gap: 16px;}
+}
+@media screen and (max-width: 540px) {
+  .report-document.brief-document {padding: 0 15px 18px;}
+}
+@media print {
+  .report-document.brief-document {padding: 0; border: 0; border-top: 2pt solid var(--ink); background: #fff;}
+  .brief-document .buyer-cover {padding: 6px 0 9px; break-inside: avoid;}
+  .buyer-folio {padding-bottom: 5px;}
+  .brief-document .buyer-folio .report-kicker, .buyer-folio time, .buyer-cover .report-meta {font-size: 9px;}
+  .buyer-cover-body {min-height: 0; padding-top: 8px;}
+  .brief-document .buyer-cover h1 {font-size: 27px;}
+  .buyer-cover .report-meta {margin-top: 6px;}
+  .buyer-cover-plate {flex-basis: 135px;}
+  .buyer-cover-plate .supplier-product-image {height: 55px;}
+  .buyer-cover-plate figcaption, .buyer-scope span {font-size: 9px;}
+  .buyer-scope b {font-size: 26px;}
+  .brief-document .decision-spread .decision-copy, .brief-document .decision-spread .decision-action {padding: 10px 14px;}
+  .brief-document .decision-spread .decision-copy h2 {font-size: 18px; margin: 5px 0;}
+  .brief-document .decision-spread .decision-copy p, .brief-document .decision-spread .decision-action p {font-size: 10px; line-height: 1.65;}
+  .brief-document > section:not(.decision-spread) {padding: 12px 0;}
+  .brief-document > section:not(.decision-spread) > .section-heading h2 {font-size: 16px;}
+  .brief-document .priority-list li {padding: 7px 0 7px 22px; gap: 12px;}
+  .brief-document .priority-list li::before {font-size: 11px; top: 8px;}
+  .brief-document .priority-list h3 {font-size: 12px;}
+  .brief-document .priority-list p, .brief-document .product-rows p, .brief-document .analysis-row p,
+  .brief-document .brief-portfolio p, .brief-document .range-steps p, .brief-document .requirement-list li {font-size: 10px;}
+  .brief-document .range-price-table td, .brief-document .range-price-table th {font-size: 9px;}
+  .brief-document .source-note {margin-top: 3px;}
+  .brief-document .citation, .brief-document .source-note-file {font-size: 8px;}
+}

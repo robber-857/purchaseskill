@@ -7,10 +7,16 @@ import {viewEvidence,withEmbeddedEvidence,printReport} from './price-evidence.js
 import {DEMOS,demoCSV,demoSupplier,demoSelection} from './demo-data.js';
 import './style.css';
 import './report-workspace.css';
+import './internal-editorial.css';
+import './supplier-report.css';
+import './report-reader.css';
 import {openPanel, closePanel, resetPanels} from './panels.js';
 import baseCSS from './style.css?raw';
 import reportCSS from './report-workspace.css?raw';
-const css=baseCSS+'\n'+reportCSS;
+import internalCSS from './internal-editorial.css?raw';
+import supplierCSS from './supplier-report.css?raw';
+import readerCSS from './report-reader.css?raw';
+const css=[baseCSS,reportCSS,internalCSS,supplierCSS,readerCSS].join('\n');
 import {warmiesReport} from './sample.js';
 import {escape as e,reportHTML,downloadReport} from './report.js';
 import {supplierSnapshot,validateFiles} from '../lib/contracts.mjs';
@@ -46,10 +52,43 @@ function shell(content,{reportView=false,supplier=false,internalView=false,share
     app.innerHTML=content+'<div id="toast" role="status"></div>';
     return;
   }
-  const sections=[['overview','grid','决策总览'],['priorities','check','关键问题'],['price','chart','逐款报价摘要'],['candidates','grid','候选产品与角色'],['highlights','check','合作亮点'],['market-comparison','chart','相似产品比价'],['portfolio','grid','现有商品影响'],['requirements','file','补充资料'],['actions','check','下一步'],['evidence','file','详细依据'],['scoring','chart','评分说明']];
-  app.innerHTML=`<aside class="app-sidebar"><a class="brand" href="/" aria-label="选品有据 首页"><span class="brandmark">选</span><span>选品有据<small>PURCHASE REVIEW</small></span></a><div class="workspace-label"><span class="workspace-avatar">P</span><div>采购评审工作区<small>产品评估与决策</small></div></div><nav class="primary-nav" aria-label="主导航"><a href="/" ${!reportView&&!internalView&&location.pathname!=='/history'?'aria-current="page"':''}>${icon('home')}供应商资料</a><a href="/internal-data" ${internalView?'aria-current="page"':''}>${icon('grid')}内部经营数据</a><a href="${reportView?'#report-top':'/example/warmies'}" ${reportView?'aria-current="page"':''}>${icon('report')}采购评审报告</a><a href="/history" ${location.pathname==='/history'?'aria-current="page"':''}>${icon('report')}历史报告</a></nav>${reportView&&!supplier?`<div class="nav-caption">报告目录</div><nav class="report-nav" aria-label="报告章节">${sections.map(([id,svg,label],i)=>`<a href="#${id}" ${i===0?'aria-current="location"':''}>${icon(svg)}${label}</a>`).join('')}</nav>`:'<div class="sidebar-hint"><span>评审流程</span><p>上传资料<br>核对证据<br>评估价值与风险<br>生成独立报告</p></div>'}</aside><header class="topbar"><a class="mobile-brand" href="/">选品有据</a><div class="breadcrumb">工作区 <span>/</span> ${reportView?(supplier?'供应商反馈':'采购评审报告'):internalView?'内部经营数据':location.pathname==='/history'?'历史报告':'供应商资料'}</div><span class="header-status"><i></i>${reportView?(supplier?'对外版本':'内部评审'):'产品资料评审'}</span><span class="user-avatar">采</span></header><nav class="upload-mobile-nav" aria-label="资料导航">${reportView?'<span class="report-nav-brand">选品有据</span>':''}<a href="/" ${!reportView&&!internalView&&location.pathname!=='/history'?'aria-current="page"':''}>供应商资料</a><a href="/internal-data" ${internalView?'aria-current="page"':''}>内部经营数据</a><a href="/history" ${location.pathname==='/history'?'aria-current="page"':''}>历史报告</a></nav>${content}<div id="toast" role="status"></div><section id="source-dialog" class="flow-panel source-panel" aria-label="来源预览" hidden><div class="panel-toolbar"><button class="close" aria-label="关闭来源">← 返回报告 / 工作台</button><span>来源预览 · 向下滚动查看完整内容</span></div><div id="source-content"></div></section>`;
+  const brand='<a class="brand" href="/" aria-label="选品有据 首页"><span class="brandmark">选</span><span>选品有据<small>PURCHASE REVIEW</small></span></a>';
+  const historyPage=location.pathname==='/history';
+  const workspaceLinks='<a href="/">供应商资料</a><a href="/internal-data">内部经营数据</a><a href="/history">历史报告</a>';
+  let frame;
+  if(reportView){
+    const chapters=supplier ? [
+      ['supplier-overview','合作建议'],['supplier-price','报价摘要'],['supplier-products','逐款产品建议'],
+      ['supplier-samples','规格与样品'],['supplier-reply','资料与后续安排']
+    ] : [
+      ['overview','决策总览'],['priorities','关键问题'],['price','报价摘要'],['candidates','候选产品'],
+      ['highlights','合作机会'],['market-comparison','相似产品比价'],['portfolio','现有商品影响'],
+      ['requirements','补充资料'],['actions','推进步骤'],['evidence','详细依据'],['scoring','评分说明']
+    ];
+    const chapterLinks=chapters.map(([id,label])=>`<a href="#${id}">${label}</a>`).join('');
+    frame=`<aside class="app-sidebar reader-sidebar">${brand}
+      <a class="reader-library-link" href="/history"><span aria-hidden="true">←</span> 历史报告</a>
+      <div class="reader-contents-label">报告目录</div><nav class="report-nav" aria-label="报告章节">${chapterLinks}</nav>
+      <nav class="reader-workspace-links" aria-label="工作区"><a href="/">供应商资料</a><a href="/internal-data">内部经营数据</a></nav></aside>
+      <div class="reader-mobile"><a class="reader-mobile-history" href="/history">← 历史报告</a><details class="reader-menu"><summary>报告目录</summary>
+      <nav aria-label="移动报告章节">${chapterLinks}</nav><div class="reader-menu-workspace">${workspaceLinks}</div></details></div>`;
+  }else{
+    const pageName=internalView?'内部经营数据':historyPage?'历史报告':'供应商资料';
+    const pageLink=(path,svg,label,current)=>`<a href="${path}" ${current?'aria-current="page"':''}>${svg?icon(svg):''}${label}</a>`;
+    frame=`<aside class="app-sidebar">${brand}<div class="workspace-label"><span class="workspace-avatar">P</span><div>采购评审工作区<small>产品评估与决策</small></div></div>
+      <nav class="primary-nav" aria-label="主导航">${pageLink('/','home','供应商资料',!internalView&&!historyPage)}${pageLink('/internal-data','grid','内部经营数据',internalView)}${pageLink('/example/warmies','report','采购评审报告',false)}${pageLink('/history','report','历史报告',historyPage)}</nav>
+      <div class="sidebar-hint"><span>评审流程</span><p>上传资料<br>核对证据<br>评估价值与风险<br>生成独立报告</p></div></aside>
+      <header class="topbar"><a class="mobile-brand" href="/">选品有据</a><div class="breadcrumb">工作区 <span>/</span> ${pageName}</div><span class="header-status"><i></i>产品资料评审</span><span class="user-avatar">采</span></header>
+      <nav class="upload-mobile-nav" aria-label="资料导航">${pageLink('/','', '供应商资料',!internalView&&!historyPage)}${pageLink('/internal-data','', '内部经营数据',internalView)}${pageLink('/history','', '历史报告',historyPage)}</nav>`;
+  }
+  app.innerHTML=frame+content+'<div id="toast" role="status"></div><section id="source-dialog" class="flow-panel source-panel" aria-label="来源预览" hidden><div class="panel-toolbar"><button class="close" aria-label="关闭来源">← 返回报告 / 工作台</button><span>来源预览 · 向下滚动查看完整内容</span></div><div id="source-content"></div></section>';
   app.querySelector('#source-dialog .close').onclick=closePanel;
-  for(const a of app.querySelectorAll('.report-nav a'))if(!document.getElementById(a.hash.slice(1)))a.remove();
+  for(const a of app.querySelectorAll('.report-nav a,.reader-menu nav a'))if(!document.getElementById(a.hash.slice(1)))a.remove();
+  const menu=app.querySelector('.reader-menu');
+  menu?.addEventListener('click',event=>{if(event.target.closest('a'))menu.open=false;});
+  menu?.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&menu.open){menu.open=false;menu.querySelector('summary').focus();}
+  });
   const nav=app.querySelector('.report-nav');
   if(nav)stopReportTracking=trackReportSection(nav);
 }
@@ -181,7 +220,22 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
     return saveMarket({offers:[...(r.marketComparison?.offers||[]),data]});
   });
   document.querySelectorAll('[data-remove-offer]').forEach(button=>button.onclick=()=>saveMarket({offers:(r.marketComparison?.offers||[]).filter((_,i)=>i!==Number(button.dataset.removeOffer))}));
-  document.querySelectorAll('[data-audience]').forEach(button=>button.onclick=async()=>{const audience=button.dataset.audience;if(audience==='supplier'&&!sample&&config.aiReady&&r.supplierReview?.version!==3){button.disabled=true;button.textContent='正在生成供应商商务报告…';try{const result=await api('supplier',{body:{}});showReport(result.report,{shared,sample,audience});}catch(err){notify(err.message);button.disabled=false;button.textContent='供应商反馈';}return;}showReport(r,{shared,sample,audience});});
+  document.querySelectorAll('[data-audience]').forEach(button=>button.onclick=async()=>{
+    const audience=button.dataset.audience;
+    let updated=r;
+    if(audience==='supplier'&&!sample&&config.aiReady&&r.supplierReview?.version!==3){
+      button.disabled=true;button.textContent='正在生成供应商商务报告…';
+      try{updated=(await api('supplier',{body:{}})).report;}
+      catch(err){notify(err.message);button.disabled=false;button.textContent='供应商反馈';return;}
+    }
+    if(location.pathname==='/history'&&job?.id){
+      const url=new URL(location.href);
+      if(audience==='supplier')url.searchParams.set('audience','supplier');
+      else url.searchParams.delete('audience');
+      url.hash='';history.replaceState(history.state,'',url);
+    }
+    showReport(updated,{shared,sample,audience});
+  });
   for(const a of app.querySelectorAll('a[href^="#"]')){
     const fragment=a.hash.slice(1),listing=a.classList.contains('listing-link');
     if(listing&&shared&&location.pathname==='/share'){
@@ -198,7 +252,7 @@ function showReport(r,{shared=false,sample=false,audience='internal'}={}){
     else if(location.pathname==='/share'&&new URLSearchParams(location.search).has('listing')){
       const url=new URL(location.href);url.searchParams.delete('listing');history.pushState(history.state,'',url);
     }else if(location.hash.startsWith('#listing-'))history.pushState(history.state,'','#'+fragment);
-    else if(location.pathname==='/example/warmies')history.replaceState(history.state,'','#'+fragment);
+    else if(location.pathname==='/example/warmies'||location.pathname==='/history')history.replaceState(history.state,'','#'+fragment);
     revealSection(target);
     });
   }
@@ -349,7 +403,8 @@ async function openHistory(id){
   const status=document.querySelector('#history-status');status.textContent='正在打开报告…';try{const result=await api('job',{id,token:null});if(!result.report){status.textContent=result.status==='analyzing'?'此任务仍在分析，请稍后刷新报告列表。':'此任务尚无完成报告，请返回工作台重新选择资料生成。';return;}
     if(!status.isConnected)return;
     if(new URLSearchParams(location.search).get('report')!==id)history.pushState({},'','/history?report='+encodeURIComponent(id));
-    job={id};sourceFiles=[];manifest=null;showReport(result.report);
+    const audience=new URLSearchParams(location.search).get('audience')==='supplier'?'supplier':'internal';
+    job={id};sourceFiles=[];manifest=null;showReport(result.report,{audience});
   }catch(err){status.textContent=err.message;}
 }
 

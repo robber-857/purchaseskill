@@ -123,11 +123,12 @@ function candidateCard(o){
   const checked=dateText(o.verification?.checkedAt||o.capturedAt);
   const matches=o.similarity?.matched||[],missing=o.similarity?.missing||[];
   const showCover=o.archivedCover?.data||marketCoverURLs(o).length||!o.priceEvidence?.id;
-  return `<article class="market-card${showCover?'':' market-text-card'}">${showCover?marketCover(o,platform):''}<div class="market-card-copy">
-    <h4>${link(o.url,o.title||o.product)}</h4><strong class="market-card-price">${e(price)}</strong><small>${e(priceNote)}</small>
-    ${matches.length?`<p><b>相似点</b> ${e(matches.join('、'))}</p>`:''}
-    ${missing.length?`<p><b>待核规格</b> ${e(missing.join('、'))}</p>`:''}
-    <div class="market-links">${listingLink(o)}${link(o.url,'查看商品页')}${evidenceControl(o)}</div>
+  return `<article class="market-card${showCover?'':' market-text-card'}"><div class="market-product-heading">${showCover?marketCover(o,platform):''}<div>
+    <h4>${link(o.url,o.title||o.product)}</h4><strong class="market-card-price">${e(price)}</strong></div></div>
+    <div class="market-card-copy"><p class="market-price-note">${e(priceNote)}</p>
+    ${matches.length?`<p class="market-spec"><b>相似点</b><span>${e(matches.join('、'))}</span></p>`:''}
+    ${missing.length?`<p class="market-spec"><b>待核规格</b><span>${e(missing.join('、'))}</span></p>`:''}
+    <div class="market-links">${evidenceControl(o)}${listingLink(o)}${link(o.url,'查看商品页')}</div>
     <details><summary>报价依据</summary>${checked?`<small>采集于 ${e(checked)}</small>`:''}
     <p>${e(verificationLabel[o.verification?.status]||'请核对页面中的规格和交易条件。')}</p>
     ${o.ocr?.offers?.length===1?`<p>${e([o.ocr.offers[0].specification,o.ocr.offers[0].unit,o.ocr.offers[0].conditions].filter(Boolean).join(' · '))}</p>`:''}
@@ -190,7 +191,7 @@ export function marketHTML(m,{editable=false}={}){
   const observed=items.filter(o=>o.verification?.amount>0&&o.verification?.currency);
   const groups=Object.groupBy(observed,o=>o.verification.currency);
   const states={needs_product:'待识别产品',not_configured:'自动搜索暂不可用',failed:'暂未取得搜索结果',partial:'部分平台检索完成',completed:'检索完成'};
-  const heading='<div class="section-heading"><div><span class="section-index">比价</span><h2>相似产品与竞品价格</h2></div><p>买方内部使用</p></div>';
+  const heading='<div class="section-heading"><h2>相似产品与竞品价格</h2></div>';
   const coverage=m?.searches?.length?`<details><summary>各平台搜索结果</summary><ul>${m.searches.map(s=>`<li>${e(s.product)} · ${e(s.platform)}：${e(({found:'找到候选',empty:'未检索到可用线索',failed:'暂未取得结果，可稍后重试'})[s.status]||'暂无结果')}</li>`).join('')}</ul></details>`:'';
   const updated=dateText(m?.capturedAt);
   const status=m?.status?`<p><strong>${e(states[m.status]||'尚未检索')}</strong>${updated?' · '+e(updated):''}</p>`:'';
@@ -198,11 +199,19 @@ export function marketHTML(m,{editable=false}={}){
     return `<section id="market-comparison" class="market-section">${heading}${status}
       <p class="data-needed">此报告暂无可对照的报价。可补充产品型号或同规格商品的链接、起订量和到货单价。</p>${coverage}</section>`;
   }
+  const proofCount=items.filter(item=>item.priceEvidence?.id).length;
+  const jump=m?.products?.length>1?`<details class="market-contents"><summary>跳至款式（${m.products.length} 款）</summary><ul>${m.products.map((p,i)=>`<li><a href="#market-sku-${i}">${e(p.name)}</a></li>`).join('')}</ul></details>`:'';
   return `<section id="market-comparison" class="market-section">${heading}
-    <div class="overview-grid"><div><span>公开候选</span><strong>${items.length}</strong><p>关键词线索，尚未确认为同款</p></div><div><span>人工核对报价</span><strong>${rows.length}</strong><p>买方录入，非平台独立认证</p></div><div><span>同口径批发报价</span><strong>${valid.length}</strong><p>规格、数量、单位、币种及税运一致</p></div><div><span>可比单价范围</span><strong>${valid.length?`${e(m.baseline.currency)} ${n(Math.min(...valid.map(o=>o.price)))}–${n(Math.max(...valid.map(o=>o.price)))}`:'待补充'}</strong><p>不混入零售券后价</p></div></div>
-    ${status}${coverage}
-    ${observed.length?`<h3>已读取商品页标价</h3><p>商品页标价可作市场参考。请在采购前与商家确认对应规格、采购数量和到货价。</p><div class="market-links">${Object.entries(groups).map(([currency,xs])=>`<strong>${e(currency)}：${n(Math.min(...xs.map(o=>o.verification.amount)))}–${n(Math.max(...xs.map(o=>o.verification.amount)))} · ${xs.length} 个候选</strong>`).join('')}</div><div class="table-scroll"><table class="market-reading-table"><thead><tr><th>相似商品 / 来源</th><th>商品页价格</th><th>规格与价格证据</th></tr></thead><tbody>${observed.map(o=>`<tr><td>${link(o.url,o.verification.productTitle)}<small>${e(o.platform)}</small></td><td data-label="商品页价格"><strong>${e(o.verification.price)}</strong><small>商品页参考 · ${e(o.verification.availability)}<br>${e(dateText(o.verification.checkedAt))}</small></td><td data-label="规格与价格依据"><details><summary>查看商品页原文与选项</summary><pre style="white-space:pre-wrap">${e(o.verification.excerpt)}</pre></details></td></tr>`).join('')}</tbody></table></div>`:''}
+    <dl class="market-metrics">
+      <div><dt>公开候选</dt><dd>${items.length}</dd></div>
+      <div><dt>已归档价格截图的候选</dt><dd>${proofCount}</dd></div>
+      <div><dt>同口径批发报价</dt><dd>${valid.length}</dd></div>
+    </dl>
+    ${valid.length?`<p>可比单价范围：${e(m.baseline.currency)} ${n(Math.min(...valid.map(o=>o.price)))}–${n(Math.max(...valid.map(o=>o.price)))}；按相同规格、数量、单位及税运条件核对。</p>`:''}
+    <div class="market-status-line">${status}${jump}</div>
     ${productGroups(m,items,editable)}
+    ${coverage}
+    ${observed.length?`<details class="market-observed"><summary>已读取商品页标价（${observed.length}）</summary><p>商品页标价可作市场参考。请在采购前与商家确认对应规格、采购数量和到货价。</p><div class="market-links">${Object.entries(groups).map(([currency,xs])=>`<strong>${e(currency)}：${n(Math.min(...xs.map(o=>o.verification.amount)))}–${n(Math.max(...xs.map(o=>o.verification.amount)))} · ${xs.length} 个候选</strong>`).join('')}</div><div class="table-scroll"><table class="market-reading-table"><thead><tr><th>相似商品 / 来源</th><th>商品页价格</th><th>规格与价格证据</th></tr></thead><tbody>${observed.map(o=>`<tr><td>${link(o.url,o.verification.productTitle)}<small>${e(o.platform)}</small></td><td data-label="商品页价格"><strong>${e(o.verification.price)}</strong><small>商品页参考 · ${e(o.verification.availability)}<br>${e(dateText(o.verification.checkedAt))}</small></td><td data-label="规格与价格依据"><details><summary>查看商品页原文与选项</summary><pre style="white-space:pre-wrap">${e(o.verification.excerpt)}</pre></details></td></tr>`).join('')}</tbody></table></div></details>`:''}
     ${listingRecords([...(m?.items||[]),...(m?.historyItems||[])])}
     ${m?.historyItems?.length?`<details class="market-history"><summary>以往检索记录（${m.historyItems.length}）</summary><p>记录保留采集时的款式归属和日期。</p>${m.historyItems.map(i=>`<div><span>${e(i.product)} · ${e(dateText(i.capturedAt))}</span> ${isSingleProductURL(i.url)&&!['redirected','unavailable','blocked'].includes(i.verification?.status)?link(i.url,i.title||'商品页'):e(i.title||'未核实的来源')} ${listingLink(i)} ${evidenceControl(i)}</div>`).join('')}</details>`:''}
     <h3>采购报价对照</h3><p>${m?.baseline?`供应商基准：${e(m.baseline.product)} · ${e(m.baseline.currency)} ${n(m.baseline.price)} / ${e(m.baseline.unit)} · 数量 ${n(m.baseline.quantity)} · ${m.baseline.taxShippingIncluded?'已确认含税到货':'税运待确认'}`:'尚未录入供应商基准，无法计算价差。'}</p>

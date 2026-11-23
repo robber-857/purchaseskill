@@ -3,6 +3,24 @@ const image='data:image/jpeg;base64,aGVsbG8=';const files=[{role:'supplier'},{ro
 const p={name:'公开杯',specification:'500ml',quote:'19元/只',retail:'未提供',conditions:'待确认',quoteEvidence:'供应商报价19元',refs:[{source:0,page:1}],recommendation:'建议样品评估',reason:'需确认密封与材质',requirements:['送样确认'],image:{source:0,page:1,index:0,x:0,y:0,width:1,height:1}};
 test('Supplier generation sees only supplier pages; internal citations and images rejected',()=>{const input=JSON.stringify(supplierInput(manifest,files));assert.doesNotMatch(input,/SECRET|U0VDUkVU/);assert.throws(()=>validateSupplierReview({summary:'test',products:[{...p,refs:[{source:1,page:1}]}]},manifest,files));assert.throws(()=>validateSupplierReview({summary:'test',products:[{...p,image:{...p.image,source:1}}]},manifest,files));});
 test('Supplier v3 renders images quotes and advice without internal report fields',()=>{const review=validateSupplierReview({summary:'产品讨论',products:[p]},manifest,files);const s=supplierSnapshot({supplierReview:review,files,createdAt:'2026-11-12',summary:'SECRET成本',marketComparison:{items:[{price:'SECRET底价'}]}});const html=reportHTML(s);assert.match(html,/报价摘要/);assert.match(html,/19元\/只/);assert.match(html,/supplier-product-image/);assert.match(html,/逐款产品建议/);assert.doesNotMatch(JSON.stringify(s)+html,/SECRET/);});
+test('Supplier quote links keep their product after recommendations are grouped', () => {
+  const products = [
+    {...p, name:'一号杯', recommendation:'先补资料再评估', image:null},
+    {...p, name:'二号杯', recommendation:'建议样品评估'}
+  ];
+  const review = validateSupplierReview({summary:'请逐款核对',products},manifest,files);
+  const html = reportHTML(supplierSnapshot({supplierReview:review,files,createdAt:'2026-11-12'}));
+  for (const [i, product] of products.entries()) {
+    const id = 'supplier-product-' + (i + 1);
+    assert.ok(html.includes(`href="#${id}">${product.name}</a>`));
+    const card = html.split(`id="${id}">`)[1].split('</article>')[0];
+    assert.ok(card.includes(`<h4>${product.name}</h4>`));
+  }
+  assert.ok(html.indexOf('id="supplier-product-2"') < html.indexOf('id="supplier-product-1"'));
+  assert.match(html, /<figcaption>二号杯<\/figcaption>/);
+  const older = reportHTML(supplierSnapshot({products:[],files,createdAt:'2026-11-12'}));
+  assert.doesNotMatch(older, /class="supplier-cover-plate"|class="supplier-product-jump"/);
+});
 test('Supplier cooperation opportunities require supplier evidence and stay optional for older reports', () => {
   const opportunity = {title:'可按单款送样',detail:'样品版本仍需双方确认',refs:[{source:0,page:1}]};
   const requestGroups = [{category:'产品与合规',items:['请提供对应型号标签样稿']}];

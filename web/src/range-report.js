@@ -1,8 +1,7 @@
 // The same sections are used in the app, standalone HTML and printed reports.
-export function rangeSections(report, {escape, heading, citation}) {
+export function rangeSections(report, {escape, heading, citation, sources}) {
   const review = report.assessment?.rangeReview;
   const products = review?.products || [];
-  const sources = refs => (refs || []).map(citation).join(' ');
   const list = items => `<ul class="report-list">${items.map(item => `<li>${escape(item)}</li>`).join('')}</ul>`;
   const quoteRow = p => `<tr>
     <td><strong>${escape(p.name)}</strong><small>${escape(p.specification)}</small>${sources(p.refs)}</td>
@@ -10,12 +9,12 @@ export function rangeSections(report, {escape, heading, citation}) {
     <td data-label="建议零售价">${escape(p.retailPrice)}</td>
     <td data-label="评估顺序">${escape(p.recommendation)}</td></tr>`;
   const priceTable = products.length ? `<div class="table-scroll"><table class="range-price-table reading-table">
-    <thead><tr><th>产品与规格</th><th>供货报价</th><th>建议零售价</th><th>评估顺序</th></tr></thead>
+    <thead><tr><th scope="col">产品与规格</th><th scope="col">供货报价</th><th scope="col">建议零售价</th><th scope="col">评估顺序</th></tr></thead>
     <tbody>${products.map(quoteRow).join('')}</tbody></table></div>` : '';
 
   function productGroup(label, items) {
     if (!items.length) return '';
-    return `<div class="product-group"><h3>${escape(label)}</h3><div class="product-rows">${items.map(p => `<article>
+    return `<div class="product-group"><h3>${escape(label)}<span class="group-count">${items.length} 款</span></h3><div class="product-rows">${items.map(p => `<article>
       <div><h4>${escape(p.name)}</h4><p class="range-role">${escape(p.role)}</p></div>
       <div><p>${escape(p.reason)}</p><p class="range-condition"><strong>推进条件</strong> ${escape(p.conditions)}</p>${sources(p.refs)}</div>
       </article>`).join('')}</div></div>`;
