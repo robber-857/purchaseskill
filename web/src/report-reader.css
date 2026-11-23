@@ -192,7 +192,7 @@
 @media screen and (max-width: 900px) and (min-height: 660px) {
   .reader-mobile { position: sticky; top: 0; }
   .reader-mobile + .report-toolbar { top: 45px; }
-  html:has(.reader-mobile) { scroll-padding-top: calc(var(--report-toolbar-height, 58px) + 56px); }
+  html:has(#app.report-view .reader-mobile) { scroll-padding-top: calc(var(--report-toolbar-height, 58px) + 56px); }
 }
 @media print {
   .reader-mobile, .reader-sidebar, .market-contents { display: none !important; }
